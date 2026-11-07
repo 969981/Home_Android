@@ -1,0 +1,8 @@
+﻿aba_path,fsb_offset,fsb_version,sample_count,codec,header_bytes,sample_headers_bytes,names_bytes,sample_data_bytes,fsb_bytes,remaining_wrapper_bytes,output_path,sha256,status,error
+assets/AB/bgm_mt_ps_01.aba,1652,,,,,,,,,,,,not_validated,Unsupported FSB version 318770177
+assets/AB/bgm_mt_st_sys01.aba,1643,,,,,,,,,,,,not_validated,Unsupported FSB version 318781441
+assets/AB/bgm_mt_st_sys02.aba,1688,,,,,,,,,,,,not_validated,Unsupported FSB version 570428417
+assets/AB/bgm_mt_st_sys03.aba,1671,,,,,,,,,,,,not_validated,Unsupported FSB version 318770177
+assets/AB/cap0001_f00_s0.aba,-1,,,,,,,,,,,,no_fsb5_signature,
+assets/AB/cap0004_f00_s0.aba,-1,,,,,,,,,,,,no_fsb5_signature,
+assets/AB/cap0007_f00_s0.aba,-1,,,,,,,,,,,,no_fsb5_signature,

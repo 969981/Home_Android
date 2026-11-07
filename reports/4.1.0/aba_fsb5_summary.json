@@ -1,0 +1,9 @@
+{
+  "aba_files": 7,
+  "failed_validation": 4,
+  "fsb_carved": 0,
+  "fsb_magic_found": 4,
+  "scope": "Embedded FSB5 container only, not decrypted .aba wrapper or decoded audio samples",
+  "validated_fsb_headers": 0,
+  "version": "4.1.0"
+}
