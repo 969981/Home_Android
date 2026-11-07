@@ -28,6 +28,32 @@ class ProbeTests(unittest.TestCase):
         self.assertIsNone(probe.match_known_ui(buf.getvalue(), "registration"))
         self.assertIsNone(probe.match_known_ui(buf.getvalue(), "delete"))
 
+    def test_selected_1999_birthpage_uses_distinct_month_day_ui_guard(self):
+        from PIL import Image
+        img=Image.new("RGB",(1080,2340),(20,20,20))
+        for norm,color in [
+            ((.5,.14),(38,179,151)),
+            ((.5,.24),(198,242,161)),
+            ((.2,.29),(142,142,142)),
+            ((.8,.29),(248,250,245)),
+            ((.4,.34),(240,30,30)),
+            ((.7,.95),(255,173,4)),
+        ]:
+            img.putpixel((int(norm[0]*1080),int(norm[1]*2340)),color)
+        out=io.BytesIO();img.save(out,format="PNG")
+        self.assertEqual(probe.match_known_ui(
+            out.getvalue(),"birthday_month_native"),
+            (int(1080*.59),int(2340*.287)))
+        self.assertEqual(probe.match_known_ui(
+            out.getvalue(),"birthday_day_native"),
+            (int(1080*.88),int(2340*.287)))
+        self.assertIsNone(probe.match_known_ui(
+            out.getvalue(),"birthday_month_dropdown"))
+        img.putpixel((216,int(.29*2340)),(248,250,245))
+        out=io.BytesIO();img.save(out,format="PNG")
+        self.assertIsNone(probe.match_known_ui(
+            out.getvalue(),"birthday_month_native"))
+
     def test_date_caption_roi_change_only_detects_target_field(self):
         from PIL import Image, ImageDraw
         base=Image.new("RGB",(1080,2340),(245,246,242))
