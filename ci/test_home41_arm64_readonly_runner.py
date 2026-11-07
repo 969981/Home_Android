@@ -189,6 +189,71 @@ class Arm64ObserverTests(unittest.TestCase):
             # this check ensures local-only display is an explicit opt-in.
             self.assertNotIn("basic.utid (server profile)",output.getvalue())
 
+    def test_opted_in_real_time_path_calls_local_rpc_once_then_detaches(self):
+        """Fake Frida only; verifies correct host RPC timing, not real HOME."""
+        import sys
+        from io import StringIO
+        from contextlib import redirect_stdout
+
+        class Interactive(StringIO):
+            def isatty(self): return True
+
+        class Script:
+            def __init__(self):
+                self.callback=None
+                self.exports_sync=SimpleNamespace(localidentity=self.localidentity)
+                self.rpc_count=0
+            def on(self,name,callback):
+                self.callback=callback
+            def load(self): pass
+            def localidentity(self):
+                self.rpc_count+=1
+                return {
+                    "first_basic_seen":True,
+                    "from_common_basic_consumer":True,
+                    "raw_utid":"4012345678",
+                    "six_digit_candidate":"345678"
+                }
+        class Session:
+            def __init__(self):
+                self.script=Script()
+                self.detached=False
+            def on(self,*args):pass
+            def create_script(self,source):return self.script
+            def detach(self):self.detached=True
+        class Device:
+            def __init__(self):self.session=Session()
+            def spawn(self,package):return 123
+            def attach(self,pid):return self.session
+            def resume(self,pid):
+                self.session.script.callback({
+                    "type":"send","payload":{
+                        "kind":"home41_utid_readonly",
+                        "version":"4.1.0",
+                        "event":"first_basic_utid_observed",
+                        "candidate_matches_target":False,
+                        "raw_utid":"NEVER_COPY_FROM_EVENT"}},
+                    None)
+        device=Device()
+        frida=SimpleNamespace(get_usb_device=lambda timeout:device)
+        output=Interactive()
+        with patch.object(mod,"preflight",return_value={
+                 "result":"native_arm64_original_apk_preflight_ok"}), \
+             patch.object(mod,"installed_apk_integrity",
+                          return_value="installed_apk_hash_verified"), \
+             patch.object(mod,"prepare_script",return_value="stub"), \
+             patch.dict(sys.modules,{"frida":frida}), \
+             patch.dict("os.environ",{"GITHUB_ACTIONS":""}), \
+             redirect_stdout(output):
+            code=mod.observe(Path("unused.apk"),"888888",None,
+                             Path("unused.js"),timeout=1,show_local_id=True)
+        self.assertEqual(code,0)
+        self.assertEqual(device.session.script.rpc_count,1)
+        self.assertTrue(device.session.detached)
+        self.assertIn("six-digit candidate: 345678",output.getvalue())
+        self.assertIn("basic.utid (server profile): 4012345678",output.getvalue())
+        self.assertNotIn("NEVER_COPY_FROM_EVENT",output.getvalue())
+
     def test_fake_frida_spawn_resume_detach_leaves_app_process_running(self):
         """Deterministic lifecycle test, not evidence from a real Android device."""
         import sys
