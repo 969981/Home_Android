@@ -30,13 +30,15 @@ const STAGE = {
 const began = Date.now();
 let armed = false;
 let captured = false;
-const output = (event, details = {}) => console.log(JSON.stringify({
+// Deliver structured, redacted events to the locally attached Frida host.
+// Do not print the raw UTID, UUID, CID, session cookie or authorization token.
+const output = (event, details = {}) => send({
   kind: 'home41_utid_readonly',
   version: VERSION,
   event,
   ms_since_attach: Date.now() - began,
   ...details
-}));
+});
 
 function getUtidCandidate(basicPtr) {
   if (basicPtr.isNull()) return null;
