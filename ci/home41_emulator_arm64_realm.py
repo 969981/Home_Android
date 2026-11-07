@@ -306,6 +306,8 @@ def main() -> int:
                         help="OPT IN: one original Unity dropdown setter call; no date submission")
     parser.add_argument("--select-local-month-day", action="store_true",
                         help="OPT IN: original Unity month/day setters after verified 1999; no form submission")
+    parser.add_argument("--probe-year-touch-scroll", action="store_true",
+                        help="Up to four bounded touch drags only within the opened original year menu")
     parser.add_argument("--probe-birthday-year", action="store_true",
                         help="Only open year picker after exact known birthdate UI; never submit")
     parser.add_argument("--probe-year-dpad", action="store_true",
@@ -321,7 +323,8 @@ def main() -> int:
         probe_birthday_year=args.probe_birthday_year,
         probe_year_dpad=args.probe_year_dpad,
         select_local_year_1999=args.select_local_year_1999,
-        select_local_month_day=args.select_local_month_day)
+        select_local_month_day=args.select_local_month_day,
+        probe_year_touch_scroll=args.probe_year_touch_scroll)
     obs = report.get("stage_monitor", {})
     arm = obs.get("arm64_emulated_realm", {})
     snapshot = arm.get("snapshot", {})
