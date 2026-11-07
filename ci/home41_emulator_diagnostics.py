@@ -363,11 +363,18 @@ def run(apk: Path, out: Path, settle: int = 25) -> dict:
         initial = screenshot(out, "01_initial.png")
         report["process_after_18_seconds"] = process_alive()
         report["language_clicked"] = click_if_known(initial, "language")
+        report["language_poll_attempts"] = 1
         if not report["language_clicked"]:
-            # A Unity page may still be fading in at the 18-second sample.
-            time.sleep(5)
-            retry = screenshot(out, "01b_language_retry.png")
-            report["language_clicked"] = click_if_known(retry, "language")
+            # Real Actions #42357267641 showed the Pokémon splash at 18s and
+            # 23s but a language page at the final 50s snapshot.
+            # Bound retries; never tap an unknown page or network error.
+            for attempt in range(2, 10):
+                time.sleep(10)
+                retry = screenshot(out, "01b_language_retry.png")
+                report["language_poll_attempts"] = attempt
+                report["language_clicked"] = click_if_known(retry, "language")
+                if report["language_clicked"]:
+                    break
         if report["language_clicked"]:
             time.sleep(8)
             confirm = screenshot(out, "02_after_language.png")
