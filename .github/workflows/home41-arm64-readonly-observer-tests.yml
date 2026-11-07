@@ -1,0 +1,34 @@
+name: HOME 4.1.0 one-shot native ARM64 UTID observer tests
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/home41-arm64-readonly-observer-tests.yml'
+      - 'ci/home41_arm64_readonly_runner.py'
+      - 'ci/test_home41_arm64_readonly_runner.py'
+      - 'ci/home41_utid_readonly_arm64.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-guard:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile and test one-shot ARM64 runner without contacting HOME
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile ci/home41_arm64_readonly_runner.py ci/test_home41_arm64_readonly_runner.py
+          python -m unittest discover -s ci -p 'test_home41_arm64_readonly_runner.py' -v
+          node --check ci/home41_utid_readonly_arm64.js
+      - name: Confirm no runtime claims
+        run: |
+          echo "Offline fixtures only. No Android guest, Frida attach, account registration or real UTID capture was attempted." >> "$GITHUB_STEP_SUMMARY"
