@@ -654,9 +654,13 @@ def run(apk: Path, out: Path, settle: int = 25,
                                                     if not ok or not photo or not moved:
                                                         break
                                                     previous=photo
-                                            adb("shell","input","keyevent","KEYCODE_BACK",
-                                                timeout=12)
-                                            time.sleep(2)
+                                            if not probe_native_year_select:
+                                                # Original OnSelectItem invokes Hide()
+                                                # itself. Back after that could
+                                                # unexpectedly navigate onboarding.
+                                                adb("shell","input","keyevent","KEYCODE_BACK",
+                                                    timeout=12)
+                                                time.sleep(2)
                                             screenshot(out,"18_year_reopen_closed.png")
                 if probe_year_dpad and first_popup and match_known_ui(
                         first_popup,"year_popup_open") is not None:
