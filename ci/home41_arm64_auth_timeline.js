@@ -73,12 +73,28 @@ let nativeModuleReady = false;
 // inputedMonth +0x5C, inputedDay +0x60.
 let birthViewPtr = null;
 
+function readYearOptionText(optionPtr) {
+  // Actual HOME CustomTMPDropdown.OptionData.m_Text is a managed string
+  // at +0x10. Only 4 ASCII digits are accepted; never expose other strings.
+  if (optionPtr.isNull()) return null;
+  try {
+    const str = optionPtr.add(0x10).readPointer();
+    if (str.isNull() || str.add(0x10).readS32() !== 4) return null;
+    const value = str.add(0x14).readUtf16String(4);
+    return /^\\d{4}$/.test(value) ? value : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 function readBirthdateUIState() {
   const empty = {
     controller_seen: birthViewPtr !== null,
     year_dropdown_present: false,
     year_option_list_present: false,
     year_option_count: null,
+    year_1999_index: null,
+    first_option_is_2026: false,
     inputed_year_in_supported_range: false,
     inputed_year_equals_1999: false,
     inputed_month_in_range: false,
@@ -93,15 +109,32 @@ function readBirthdateUIState() {
     const month = birthViewPtr.add(0x5C).readS32();
     const day = birthViewPtr.add(0x60).readS32();
     let count = null;
+    let targetIndex = null;
+    let firstIs2026 = false;
     if (!yearList.isNull()) {
       const n = yearList.add(0x18).readS32(); // List<T>._size on 64-bit IL2CPP
       if (n >= 0 && n <= 500) count = n;
+      if (count !== null && count <= 300) {
+        const items = yearList.add(0x10).readPointer(); // List<T>._items
+        if (!items.isNull()) {
+          // 64-bit SZArray: object header 0x10 + length 0x08 +
+          // 8-byte padding then reference slots begin at +0x20.
+          for (let i = 0; i < count; i++) {
+            const opt = items.add(0x20 + i * 8).readPointer();
+            const value = readYearOptionText(opt);
+            if (i === 0) firstIs2026 = value === '2026';
+            if (value === '1999') targetIndex = i;
+          }
+        }
+      }
     }
     return {
       controller_seen: true,
       year_dropdown_present: !yearDropdown.isNull(),
       year_option_list_present: !yearList.isNull(),
       year_option_count: count,
+      year_1999_index: targetIndex,
+      first_option_is_2026: firstIs2026,
       inputed_year_in_supported_range: year >= 1900 && year <= 2100,
       inputed_year_equals_1999: year === 1999,
       inputed_month_in_range: month >= 1 && month <= 12,
