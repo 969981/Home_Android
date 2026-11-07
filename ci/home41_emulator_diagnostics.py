@@ -142,6 +142,69 @@ def match_known_ui(data: bytes, stage: str):
 
 
 
+
+def predeny_disposable_avd_permissions() -> dict:
+    """Deny nonessential OS permissions on a fresh AVD; no location collected.
+
+    A deny plus USER_FIXED is important: revoke alone leaves the first-run
+    Android runtime permission dialog visible over the HOME window.
+    """
+    perms = {
+        "android.permission.ACCESS_FINE_LOCATION": "FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION": "COARSE_LOCATION",
+        "android.permission.POST_NOTIFICATIONS": None,
+    }
+    original = adb("shell", "dumpsys", "package", PACKAGE, timeout=25)
+    declared = (original.stdout or "") if original and original.returncode == 0 else ""
+    result = {}
+    for name, appop in perms.items():
+        if name not in declared:
+            result[name] = "not_declared"
+            continue
+        revoke = adb("shell", "pm", "revoke", PACKAGE, name, timeout=20)
+        fixed = adb("shell", "pm", "set-permission-flags", PACKAGE, name,
+                    "user-set", "user-fixed", timeout=20)
+        if appop is not None:
+            adb("shell", "cmd", "appops", "set", PACKAGE, appop, "ignore", timeout=20)
+        result[name] = ("commands_ok" if revoke and revoke.returncode == 0 and
+                        fixed and fixed.returncode == 0 else "command_failed")
+    verified = adb("shell", "dumpsys", "package", PACKAGE, timeout=25)
+    status = (verified.stdout or "") if verified and verified.returncode == 0 else ""
+    for name in perms:
+        if result[name] == "not_declared":
+            continue
+        match = re.search(re.escape(name) +
+                          r":\s*granted=(true|false).*?flags=\[([^\]]*)\]", status)
+        flags = match.group(2) if match else ""
+        result[name] = ("verified_denied_fixed"
+                        if match and match.group(1) == "false" and
+                        "USER_FIXED" in flags and "USER_SET" in flags
+                        else "not_verified")
+    return result
+
+
+def deny_known_android_permission_dialog(xml_text: str):
+    """Android OS permission-controller 'Don't allow' only; not app consent."""
+    if not xml_text or "permissioncontroller" not in xml_text.lower():
+        return None
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return None
+    for node in root.iter("node"):
+        a = node.attrib
+        if ("permissioncontroller" not in a.get("package", "").lower() or
+                a.get("text", "").strip().casefold() not in
+                {"don't allow", "don’t allow"}):
+            continue
+        m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+                         a.get("bounds", ""))
+        if m:
+            x1, y1, x2, y2 = map(int, m.groups())
+            if x2 > x1 and y2 > y1:
+                return (x1+x2)//2, (y1+y2)//2
+    return None
+
 def immersive_hint_position(data: bytes):
     """Use only the observed Android OS full-screen overlay color signature."""
     if not data.startswith(PNG_MAGIC):
@@ -206,8 +269,12 @@ def dismiss_known_os_overlays() -> list[dict]:
                        "/sdcard/window.xml", timeout=25)
             read = adb("shell", "cat", "/sdcard/window.xml", timeout=12) if (
                 dump and dump.returncode == 0) else None
-            pos = launcher_anr_close_position(
-                (read.stdout or "") if read and read.returncode == 0 else "")
+            xml = (read.stdout or "") if read and read.returncode == 0 else ""
+            pos = launcher_anr_close_position(xml)
+            if pos is None:
+                pos = deny_known_android_permission_dialog(xml)
+                if pos is not None:
+                    event = "deny_android_runtime_permission"
         if pos is None:
             break
         clicked = adb("shell", "input", "tap", str(pos[0]), str(pos[1]), timeout=15)
@@ -280,6 +347,7 @@ def run(apk: Path, out: Path, settle: int = 25) -> dict:
         # Grant CAMERA only on this camera-less, throwaway AVD; not HOME consent.
         grant = adb("shell", "pm", "grant", PACKAGE, "android.permission.CAMERA")
         report["camera_permission_grant"] = bool(grant and grant.returncode == 0)
+        report["os_permission_preflight"] = predeny_disposable_avd_permissions()
         # Prevent the standard OS immersive prompt from hiding HOME.
         immersive = adb("shell", "settings", "put", "secure",
                         "immersive_mode_confirmations", "confirmed", timeout=15)
