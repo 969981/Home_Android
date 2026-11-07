@@ -89,7 +89,7 @@ jobs:
           heap-size: 512M
           disable-animations: true
           emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
-          script: python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --select-local-year-1999 --select-local-month-day
+          script: python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --select-local-year-1999 --select-local-month-day --probe-year-touch-scroll
 
       - name: Report strict ARM64 realm results and ordinary UI evidence
         if: always()
@@ -222,4 +222,16 @@ jobs:
               raise SystemExit("NOT VERIFIED: internal DOB 1999-04-05")
           print("VERIFIED: HOME dropdowns and controller selected 1999-04-05 internally")
           print("NO CLAIM: visible UI text, submitted DOB, registered account, or UTID")
+          if probe.get("year_reopened_after_full_internal_dob") is not True:
+              raise SystemExit("NOT VERIFIED: year dropdown did not reopen")
+          if probe.get("year_reopen_screenshot_saved") is not True:
+              raise SystemExit("NOT VERIFIED: no year reopen screenshot")
+          print("YEAR OPEN input index:", ui.get("year_scroll_open_input_index"),
+                "matches 1999:", ui.get("year_scroll_open_input_equals_1999"))
+          attempts=probe.get("year_touch_scroll_attempts",[])
+          print("Verified bounded year drags recorded:",len(attempts))
+          print("Any year list ROI pixel changed:",probe.get("year_touch_scroll_any_roi_change"))
+          if not attempts or not all(x.get("screenshot_saved") for x in attempts):
+              raise SystemExit("NOT VERIFIED: touch scroll experiment not completed")
+          print("UI/scroll study only: no year item clicked, DOB unsubmitted, no UTID")
           PY
