@@ -92,7 +92,7 @@ def run_fake(ids,visible="654321",answers=("yes","yes","yes")):
          patch.object(mod.core,"installed_apk_integrity",
                       return_value="installed_apk_hash_verified"), \
          patch.object(mod.core,"prepare_script",return_value="stub Frida JS"), \
-         patch.object(mod,"process_alive",return_value=True), \
+         patch.object(mod,"process_alive",side_effect=[True,True,False,True,True]), \
          patch.object(mod.core,"adb",return_value=SimpleNamespace(
                       returncode=0,stdout="")), \
          patch.dict(sys.modules,{"frida":frida}),redirect_stdout(out):
