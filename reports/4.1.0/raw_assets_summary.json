@@ -1,0 +1,12 @@
+{
+  "by_kind": {
+    "audio_candidate": 36,
+    "image_png": 66,
+    "text_or_data_candidate": 3
+  },
+  "note": "No format conversion; all exported files are byte-identical copies of APK ZIP members.",
+  "selected": 105,
+  "status": "ok",
+  "verified": 105,
+  "version": "4.1.0"
+}

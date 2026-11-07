@@ -1,0 +1,178 @@
+{
+  "dex": [
+    {
+      "bytes": 8183736,
+      "class_defs": 9091,
+      "field_ids": 22532,
+      "header_file_size": 8183736,
+      "header_size": 112,
+      "magic_hex": "6465780a30333500",
+      "method_ids": 65298,
+      "path": "classes.dex",
+      "proto_ids": 16347,
+      "sha256": "683b529569acfc7d1dd0dcf40def0799d812ba696627b2c88feaa799983cff9e",
+      "size_matches": true,
+      "string_ids": 51972,
+      "type_ids": 10783,
+      "valid": true,
+      "version": "035"
+    },
+    {
+      "bytes": 2480,
+      "class_defs": 13,
+      "field_ids": 0,
+      "header_file_size": 2480,
+      "header_size": 112,
+      "magic_hex": "6465780a30333500",
+      "method_ids": 14,
+      "path": "classes2.dex",
+      "proto_ids": 1,
+      "sha256": "c2824b195f5b6f6a04b409f06af1a222c23bc6682d4103fcf5b4660ad7c794d2",
+      "size_matches": true,
+      "string_ids": 21,
+      "type_ids": 16,
+      "valid": true,
+      "version": "035"
+    },
+    {
+      "bytes": 6820996,
+      "class_defs": 5737,
+      "field_ids": 13357,
+      "header_file_size": 6820996,
+      "header_size": 112,
+      "magic_hex": "6465780a30333500",
+      "method_ids": 45685,
+      "path": "classes3.dex",
+      "proto_ids": 11016,
+      "sha256": "8b5f3fdd7cfb13d85485d99013ddc7ee78362c09230eb8124d31fb197ede6ac3",
+      "size_matches": true,
+      "string_ids": 40111,
+      "type_ids": 6851,
+      "valid": true,
+      "version": "035"
+    }
+  ],
+  "dex_count": 3,
+  "elf": [
+    {
+      "architecture": "AArch64",
+      "bits": 64,
+      "bytes": 51296,
+      "endian": "little",
+      "machine": 183,
+      "magic_hex": "7f454c4602010100",
+      "path": "lib/arm64-v8a/libFirebaseCppAnalytics.so",
+      "sha256": "ca8f59698dd745074fddf57a12cfce4f7596c8f7cffa65cb208f13de6d814a62",
+      "valid": true
+    },
+    {
+      "architecture": "AArch64",
+      "bits": 64,
+      "bytes": 4270944,
+      "endian": "little",
+      "machine": 183,
+      "magic_hex": "7f454c4602010100",
+      "path": "lib/arm64-v8a/libFirebaseCppApp-12_10_0.so",
+      "sha256": "39bf66d3b806c633a1772e4a7ae776873eadbb30450d5d10d3994c5b09785e0a",
+      "valid": true
+    },
+    {
+      "architecture": "AArch64",
+      "bits": 64,
+      "bytes": 67760,
+      "endian": "little",
+      "machine": 183,
+      "magic_hex": "7f454c4602010100",
+      "path": "lib/arm64-v8a/libFirebaseCppMessaging.so",
+      "sha256": "385b0d7ee5425bf440ad194e50f76ce842fdba59d18ed3a4c901be88b2d781b1",
+      "valid": true
+    },
+    {
+      "architecture": "AArch64",
+      "bits": 64,
+      "build_id": "aef1d4348be7e99f",
+      "bytes": 3848,
+      "endian": "little",
+      "machine": 183,
+      "magic_hex": "7f454c4602010100",
+      "path": "lib/arm64-v8a/lib_burst_generated.so",
+      "sha256": "6e4a6d694bd7d17f1213aa7c0eea44f240b10286782ec333d59828979377a9d8",
+      "valid": true
+    },
+    {
+      "architecture": "AArch64",
+      "bits": 64,
+      "build_id": "a8788a1e08e2c0f2f1d634115eaa669e3d187184",
+      "bytes": 75365728,
+      "endian": "little",
+      "machine": 183,
+      "magic_hex": "7f454c4602010100",
+      "path": "lib/arm64-v8a/libil2cpp.so",
+      "sha256": "80bfbc3d480bf3c91297d65a441a37e40260b70fd8b0ddc8da70c34f0870b6fe",
+      "valid": true
+    },
+    {
+      "architecture": "AArch64",
+      "bits": 64,
+      "build_id": "d5286e5aefbfd596b4b32a76fb02122de64b4954",
+      "bytes": 6696,
+      "endian": "little",
+      "machine": 183,
+      "magic_hex": "7f454c4602010100",
+      "path": "lib/arm64-v8a/libmain.so",
+      "sha256": "93f0d1d9b909fd62dfc8c3fb2c78ed46f3c841fc089ba47b90d56d07b043f869",
+      "valid": true
+    },
+    {
+      "architecture": "AArch64",
+      "bits": 64,
+      "build_id": "98107cae4f64b0429611150d7b8862c5ab8d9855",
+      "bytes": 21232,
+      "endian": "little",
+      "machine": 183,
+      "magic_hex": "7f454c4602010100",
+      "path": "lib/arm64-v8a/libms.so",
+      "sha256": "bebe8921c349c563347aa8e88b551f2fbb0831349e2363a86f12cbe4888ff095",
+      "valid": true
+    },
+    {
+      "architecture": "AArch64",
+      "bits": 64,
+      "build_id": "e3effad6e520baa84e5f29946b780b268258cc43",
+      "bytes": 1304840,
+      "endian": "little",
+      "machine": 183,
+      "magic_hex": "7f454c4602010100",
+      "path": "lib/arm64-v8a/libsigner.so",
+      "sha256": "8be033d3423258ac6975c17813eae0ee41c9c743f90ab40e40fa9c1c58eef371",
+      "valid": true
+    },
+    {
+      "architecture": "AArch64",
+      "bits": 64,
+      "build_id": "a1e53f06307dcc1f",
+      "bytes": 20969760,
+      "endian": "little",
+      "machine": 183,
+      "magic_hex": "7f454c4602010100",
+      "path": "lib/arm64-v8a/libunity.so",
+      "sha256": "ea65b64496dfed26af28324644ce500edc6c4e6386cf739696a4e3eee1b7e568",
+      "valid": true
+    }
+  ],
+  "elf_count": 9,
+  "il2cpp_metadata": [
+    {
+      "bytes": 12978072,
+      "header_hex": "af1bb1fa1f000000000100001866020018670200ec2a080004920a000c221d00",
+      "magic": "0xfab11baf",
+      "path": "assets/bin/Data/Managed/Metadata/global-metadata.dat",
+      "sanity_valid": true,
+      "sha256": "dde114e58c195c44d8261ff00259c2da5dcfd62facad6103ea4b60b77bebb0ad",
+      "version": 31
+    }
+  ],
+  "il2cpp_pair_present": true,
+  "scope": "Header and BuildID audit only; JADX/Cpp2IL/Ghidra decompilation not performed",
+  "version": "4.1.0"
+}
