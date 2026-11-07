@@ -56,6 +56,12 @@ def sanitize_birth_ui(raw: object) -> dict:
     return {
         **{key:src.get(key) is True for key in fields},
         "year_option_count": n if type(n) is int and 0<=n<=500 else None,
+        "year_1999_index": (
+            src.get("year_1999_index")
+            if type(src.get("year_1999_index")) is int
+            and 0<=src["year_1999_index"]<=300 else None
+        ),
+        "first_option_is_2026": src.get("first_option_is_2026") is True,
         # Never export raw birth date, pointer, list elements or account data.
         "raw_birthdate_logged": False,
     }
