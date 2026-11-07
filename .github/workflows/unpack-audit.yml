@@ -1,0 +1,73 @@
+name: HOME 4.1.0 APK inventory and Unity export
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'ROMS/**'
+      - 'tools/**'
+      - 'tests/**'
+      - '.github/workflows/unpack-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: home-android-4.1.0-audit
+  cancel-in-progress: false
+jobs:
+  unpack:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check scripts and run deterministic fixture tests
+        run: |
+          python -m compileall -q tools tests
+          python -m unittest discover -s tests -v
+      - name: Audit the actual APK and its CRC
+        run: python tools/home.py audit --version 4.1.0
+      - name: Extract the real APK
+        run: python tools/home.py extract --version 4.1.0
+      - name: Scan all extracted file headers and libraries
+        run: python tools/home.py scan --version 4.1.0
+      - name: Install Unity decode dependencies
+        run: python -m pip install -r tools/requirements-unity.txt
+      - name: Decode supported Unity textures, sprites, texts and meshes
+        run: python tools/unity_export.py --version 4.1.0 --max-size-mib 256
+      - name: Build source-linked SQLite inventory
+        run: python tools/index_db.py --version 4.1.0
+      - name: Upload audit and parsed indexes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: home-4.1.0-audit
+          path: |
+            reports/4.1.0/
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 6
+      - name: Upload legitimately owned converted resources
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: home-4.1.0-converted-resources
+          path: resources/4.1.0/
+          if-no-files-found: ignore
+          retention-days: 7
+          compression-level: 1
+      - name: Commit reproducible metadata reports to Git
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f reports/4.1.0/summary.json reports/4.1.0/scan_summary.json reports/4.1.0/unity_summary.json reports/4.1.0/index_summary.json reports/4.1.0/apk.sha256 reports/4.1.0/apk_entries.csv
+          if git diff --cached --quiet; then
+            echo "No metadata changes"
+          else
+            git commit -m "reports: audit real HOME Android 4.1.0 APK [skip ci]"
+            git push
+          fi
