@@ -448,8 +448,7 @@ def main() -> int:
         select_month_day=args.select_local_month_day,
         probe_native_year_select=(
             args.probe_native_year_select or args.probe_native_full_date_select),
-        probe_native_full_date_select=args.probe_native_full_date_select,
-        advance_birthday_once=args.advance_birthday_once)
+        probe_native_full_date_select=args.probe_native_full_date_select)
     report = diag.run(
         args.apk, args.output, settle=max(3,min(60,args.settle_seconds)),
         observer=observer, select_china_mainland=True,
@@ -460,7 +459,8 @@ def main() -> int:
         probe_year_touch_scroll=args.probe_year_touch_scroll,
         probe_native_year_select=(
             args.probe_native_year_select or args.probe_native_full_date_select),
-        probe_native_full_date_select=args.probe_native_full_date_select)
+        probe_native_full_date_select=args.probe_native_full_date_select,
+        advance_birthday_once=args.advance_birthday_once)
     obs = report.get("stage_monitor", {})
     arm = obs.get("arm64_emulated_realm", {})
     snapshot = arm.get("snapshot", {})
