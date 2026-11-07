@@ -127,3 +127,23 @@ py -3 ci/home41_arm64_runtime_acceptance.py --apk "$apk" --target 888888 --timeo
 - 新增约束：仅收到 Android `am force-stop` 退出码不足以宣称冷启动。必须再通过 ADB 确认**旧 HOME 进程确实消失**；否则记录 `previous_home_process_still_alive` 并停止第二阶段。
 - 新增离线负例：模拟 `force-stop` 返回成功但进程仍在，确认脚本拒绝宣称 `REAL_DEVICE_THREE_GATES_PASSED`。
 - 实际设备尚未连接到当前执行环境，因此 **`UDManager.SetBasic` 的真实动态命中、官方六位 ID 对账、冷启动同号三项仍未实测**。单元测试不能替代这些证据。
+
+
+### 2026-11-07：补齐来源追溯与独立进程身份检查（最终 22 项离线测试）
+
+这次将“真实验收”严格化，而非只增加静态检测。以下条件已经落在 `ci/home41_arm64_runtime_acceptance.py` 的**实际成功路径**：
+
+1. 捕获前必须收到 `read_only_observer_ready`，不能把未完成安装的回调假定为有效。
+2. `UDManager.SetBasic` 在 ARM64 入口读取到的 `UD_Basic.utid`，其 `LR` 必须恰好等于原生公共响应消费点 `libil2cpp.so+0x1D2BA68`；否则返回 `first_basic_caller_not_verified_common_response`，不进行成功上报。由于这只是静态研究给出的候选调用点，如果真实设备 LR 不同，必须先重新分析而不是绕过来源门槛。
+3. 显示的六位 ID 与首次 Hook 计算候选值一致；若不一致，返回 `runtime_utid_display_id_mismatch`，禁止冷启动。
+4. Frida 断开后，操作者确认原 APP 可正常操作，而且能取得有效运行中 `pidof`。
+5. 操作者明确允许执行 `am force-stop`；确认此时 APP 已无进程，且第二次启动的实际 PID 与第一次的 PID **不相等**。否则返回 `new_process_identity_not_confirmed`，不能把热启动伪装为冷启动。
+6. 第二次 `SetBasic` 同样来自已知公共响应消费点，且再次与第一阶段仅保存在本机内存的官方显示 ID 相等。操作员还需在画面确认同号。
+
+证据严格分级：
+- **已验证（离线）**：最新 [Actions #42367132737](https://github.com/969981/Home_Android/actions/runs/42367132737) 完成 **11 项双阶段负例/流程测试 + 11 项单次运行器测试，共 22/22 项通过**；其中包括伪造公共响应来源和重复 PID 的拒绝测试。
+- **尚未验证（真实设备）**：这一轮没有连接 Android 手机或原生 ARM64 客体，也没有真实 `first_basic_utid_observed`、官方 ID 对账或冷启动持久化数据。只有在个人控制的 ARM64 Android 上完成 `ci/home41_arm64_runtime_acceptance.py` 的完整现场操作，才可另行记录真实验收结论。
+
+目前 GitHub 托管 Linux ARM64 / macOS Apple Silicon Android Emulator 实验均无法提供工作中的 ARM64 Android 客体；当前助手运行容器也没有 `adb` 或已连接的 Android 设备。因此**不能将 22 项模拟测试等价为你要求的三项真实验收**。
+
+公开仓库只保存观察器、校验流程和脱敏通过/失败报告；使用者在本人设备上手工输入的六位 ID 不回显、不写入日志，也不上传 Github。
