@@ -75,11 +75,13 @@ class FakeDevice:
             "kind":"home41_utid_readonly","version":"4.1.0",
             "event":"first_basic_utid_observed",
             "candidate_matches_target": False,
-            "source_common_response_consumer":True,
+            "source_common_response_consumer":self.caller_verified,
             "utid":"SECRET_UTID_SHOULD_NOT_LEAK"}},None)
 
-def run_fake(ids,visible="654321",answers=("yes","yes","yes")):
+def run_fake(ids,visible="654321",answers=("yes","yes","yes"),
+             pids=(4242,4343), caller_verified=True):
     device=FakeDevice(ids)
+    device.caller_verified=caller_verified
     frida=SimpleNamespace(get_usb_device=lambda timeout:device)
     prompt_calls=[]
     def prompt(text):
@@ -93,7 +95,7 @@ def run_fake(ids,visible="654321",answers=("yes","yes","yes")):
                       return_value="installed_apk_hash_verified"), \
          patch.object(mod.core,"prepare_script",return_value="stub Frida JS"), \
          patch.object(mod,"process_alive",side_effect=[True,True,False,True,True]), \
-         patch.object(mod,"process_id",side_effect=[4242,4343]), \
+         patch.object(mod,"process_id",side_effect=list(pids)), \
          patch.object(mod.core,"adb",return_value=SimpleNamespace(
                       returncode=0,stdout="")), \
          patch.dict(sys.modules,{"frida":frida}),redirect_stdout(out):
@@ -122,6 +124,23 @@ class NativeRuntimeAcceptanceFixtures(unittest.TestCase):
         self.assertEqual(dev.spawn_count,2)
         self.assertNotIn("REAL_DEVICE_THREE_GATES_PASSED",output)
         self.assertIn("runtime_utid_display_id_mismatch",output)
+
+    def test_same_pid_after_restart_rejects_false_cold_start(self):
+        result,dev,output,_=run_fake(["654321","654321"],
+                                      pids=(4242,4242))
+        self.assertEqual(result,3)
+        self.assertNotIn("REAL_DEVICE_THREE_GATES_PASSED",output)
+        self.assertIn("new_process_identity_not_confirmed",output)
+
+    def test_non_common_response_caller_cannot_claim_server_basic(self):
+        result,dev,output,prompts=run_fake(["654321"],
+                                           caller_verified=False,
+                                           answers=())
+        self.assertEqual(result,3)
+        self.assertEqual(dev.spawn_count,1)
+        self.assertEqual(len(prompts),0)
+        self.assertIn("first_basic_caller_not_verified_common_response",output)
+        self.assertNotIn("REAL_DEVICE_THREE_GATES_PASSED",output)
 
     def test_first_capture_mismatch_must_not_force_stop(self):
         result,dev,output,prompts=run_fake(["123123"],answers=())
