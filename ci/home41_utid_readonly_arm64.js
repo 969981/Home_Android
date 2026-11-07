@@ -32,6 +32,7 @@ let armed = false;
 let captured = false;
 // Stay in the Frida agent memory only; never send the six digits to the host.
 let cachedCandidate = null;
+let cachedRawUtid = null;
 let observedCommonBasicCaller = false;
 rpc.exports = {
   comparevisibleid(id) {
@@ -48,6 +49,17 @@ rpc.exports = {
       native_arm64: Process.arch === 'arm64',
       hooks_initialized: armed,
       first_basic_seen: cachedCandidate !== null
+    };
+  },
+  // EXPLICIT LOCAL-ONLY RPC. The controlling PC invokes this only when
+  // --show-local-id is set. Never call it from public CI or log this object.
+  localidentity() {
+    return {
+      first_basic_seen: cachedCandidate !== null,
+      raw_utid: cachedRawUtid,
+      six_digit_candidate: cachedCandidate,
+      from_common_basic_consumer: observedCommonBasicCaller,
+      candidate_semantics: 'UNVERIFIED_AGAINST_POKEMON_OT'
     };
   }
 };
@@ -72,7 +84,10 @@ function getUtidCandidate(basicPtr) {
   if (!/^[0-9]{1,10}$/.test(value)) return null;
   const numeric = Number(value);
   if (!Number.isSafeInteger(numeric) || numeric > 0xffffffff) return null;
-  return String(numeric % 1000000).padStart(6, '0');
+  return {
+    raw_utid: value,
+    candidate: String(numeric % 1000000).padStart(6, '0')
+  };
 }
 
 function observe(name, address, callback) {
@@ -109,17 +124,18 @@ function activate(lib) {
     onEnter(args) {
       if (captured) return;
       try {
-        const candidate = getUtidCandidate(args[0]);
-        if (candidate === null) {
+        const identity = getUtidCandidate(args[0]);
+        if (identity === null) {
           output('basic_received_without_numeric_utid');
           return;
         }
         captured = true;
-        cachedCandidate = candidate;
+        cachedRawUtid = identity.raw_utid;
+        cachedCandidate = identity.candidate;
         observedCommonBasicCaller = this.context.lr.equals(ptr(RVA.commonBasicReturn));
         output('first_basic_utid_observed', {
           public_output_is_redacted: true,
-          candidate_matches_target: candidate === EXPECTED_TARGET,
+          candidate_matches_target: cachedCandidate === EXPECTED_TARGET,
           source_common_response_consumer: observedCommonBasicCaller,
           registration_callback_seen: STAGE.register_response_seen,
           token_callback_seen: STAGE.token_response_seen,
