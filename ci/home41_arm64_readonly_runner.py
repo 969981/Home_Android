@@ -12,6 +12,7 @@ The visible Trainer ID conversion remains unverified until compared in HOME.
 from __future__ import annotations
 
 import argparse
+import os
 import hashlib
 import json
 import re
@@ -159,8 +160,41 @@ def print_report(report: dict) -> None:
     print(json.dumps(report, ensure_ascii=False, sort_keys=True), flush=True)
 
 
+def display_local_identity(details: object, *, allow_terminal: bool) -> bool:
+    """Explicit, interactive local-only value display; never store to JSON/CI.
+
+    A candidate equals the HOME visible six-digit ID only after separate
+    verification. It does NOT establish a Charmander Pokémon OT identity.
+    """
+    if not allow_terminal or os.getenv("GITHUB_ACTIONS", "").lower() == "true":
+        print_report({"result":"local_id_display_blocked_not_interactive_terminal"})
+        return False
+    if not isinstance(details, dict) or details.get("first_basic_seen") is not True:
+        print_report({"result":"local_id_display_missing_first_basic"})
+        return False
+    if details.get("from_common_basic_consumer") is not True:
+        print_report({"result":"local_id_display_unverified_basic_caller"})
+        return False
+    raw = details.get("raw_utid")
+    candidate = details.get("six_digit_candidate")
+    if (not isinstance(raw, str) or re.fullmatch(r"[0-9]{1,10}", raw) is None
+            or int(raw) > 0xffffffff or not isinstance(candidate, str)
+            or re.fullmatch(r"[0-9]{6}", candidate) is None
+            or candidate != str(int(raw) % 1000000).zfill(6)):
+        print_report({"result":"local_id_display_invalid_or_inconsistent_identity"})
+        return False
+    # The ONLY code path allowed to display full account IDs. Deliberate
+    # --show-local-id flag + interactive console; no JSONL export, no disk.
+    print(f"[LOCAL TERMINAL ONLY] basic.utid (server profile): {raw}", flush=True)
+    print(f"[LOCAL TERMINAL ONLY] six-digit candidate: {candidate}", flush=True)
+    print("[UNVERIFIED] This is a candidate from HOME basic.utid, NOT yet "
+          "proven to be Charmander's Pokemon OT ID.", flush=True)
+    return True
+
+
 def observe(apk: Path, target_tid: str, serial: str | None,
-            script_path: Path, timeout: int = 180) -> int:
+            script_path: Path, timeout: int = 180,
+            show_local_id: bool = False) -> int:
     check = preflight(apk, serial)
     print_report(check)
     if check["result"] != "native_arm64_original_apk_preflight_ok":
@@ -169,6 +203,10 @@ def observe(apk: Path, target_tid: str, serial: str | None,
     print_report({"installed_apk_integrity": installed_integrity})
     if installed_integrity != "installed_apk_hash_verified":
         print_report({"result": "instrumentation_blocked_installed_apk_not_verified"})
+        return 2
+    if show_local_id and (not sys.stdout.isatty() or
+                          os.getenv("GITHUB_ACTIONS", "").lower() == "true"):
+        print_report({"result":"local_id_display_blocked_not_interactive_terminal"})
         return 2
     source = prepare_script(script_path, target_tid)
     try:
@@ -224,8 +262,18 @@ def observe(apk: Path, target_tid: str, serial: str | None,
         if not got_first.wait(timeout=max(1, min(timeout, 3600))):
             observation["result"] = ("frida_session_detached_before_basic"
                                      if detached.is_set() else "timeout_no_basic_observed")
+            print_report(observation)
+            return 3
+        if show_local_id:
+            try:
+                details = script.exports_sync.localidentity()
+                observation["local_id_displayed"] = display_local_identity(
+                    details, allow_terminal=sys.stdout.isatty())
+            except Exception as err:
+                observation["local_id_displayed"] = False
+                observation["local_id_error_type"] = type(err).__name__
         print_report(observation)
-        return 0 if got_first.is_set() else 3
+        return 0 if not show_local_id or observation.get("local_id_displayed") else 4
     except Exception as err:
         print_report({"result": "frida_instrumentation_failed",
                       "error_type": type(err).__name__,
@@ -268,6 +316,9 @@ def main() -> int:
     parser.add_argument("mode", choices=["preflight", "observe", "restart-smoke"])
     parser.add_argument("--apk", required=True, type=Path)
     parser.add_argument("--target", default="888888")
+    parser.add_argument("--show-local-id", action="store_true",
+                        help="Opt in: print raw profile UTID and six-digit candidate "
+                             "ONLY to an interactive local console; never public CI.")
     parser.add_argument("--serial", help="ADB serial, when more than one device is present")
     parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument("--script", type=Path,
@@ -279,7 +330,8 @@ def main() -> int:
         return 0 if result["result"] == "native_arm64_original_apk_preflight_ok" else 2
     if args.mode == "restart-smoke":
         return restart_smoke(args.apk, args.serial)
-    return observe(args.apk, args.target, args.serial, args.script, args.timeout)
+    return observe(args.apk, args.target, args.serial, args.script,
+                   args.timeout, show_local_id=args.show_local_id)
 
 
 if __name__ == "__main__":
