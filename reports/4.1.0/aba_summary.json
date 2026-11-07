@@ -1,0 +1,17 @@
+{
+  "avg_sample_entropy": 7.62751,
+  "common_prefix_bytes": 32,
+  "embedded_known_signature_files": {
+    "fsb5": 4,
+    "ogg": 0,
+    "png": 0,
+    "riff": 0,
+    "unityfs": 0
+  },
+  "files": 7,
+  "shared_header_hex": "7e5a93307bfa0ddcfc17b5c054b8b1299cbedf911dca5628c2244d61c79f8b9f",
+  "status": "header_inspected_not_decompressed",
+  "total_bytes": 2965598,
+  "version": "4.1.0",
+  "warning": "Shared header or entropy alone does not prove encryption or compression."
+}

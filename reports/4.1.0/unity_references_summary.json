@@ -1,0 +1,15 @@
+{
+  "by_status": {
+    "external_file": 1483,
+    "links_total": 2631,
+    "parsed_selected_objects": 1031,
+    "same_file_resolved": 1148,
+    "selected_objects": 1031,
+    "selected_without_refs": 122
+  },
+  "containers": 1471,
+  "error_records": 0,
+  "scope": "Unity material/animation serialized PPtr refs only; external links require dependency resolution",
+  "tool_version": "1.25.4",
+  "version": "4.1.0"
+}

@@ -1,0 +1,13 @@
+{
+  "dynamic_function_symbols": 2013,
+  "libil2cpp_sha256": "80bfbc3d480bf3c91297d65a441a37e40260b70fd8b0ddc8da70c34f0870b6fe",
+  "limitation": "Static metadata ranges/dynsym only; registration pointers and IL2CPP method addresses not yet recovered.",
+  "metadata_bytes": 12978072,
+  "metadata_section_pairs": 31,
+  "metadata_sha256": "dde114e58c195c44d8261ff00259c2da5dcfd62facad6103ea4b60b77bebb0ad",
+  "metadata_version": 31,
+  "pairs_within_file": 31,
+  "status": "headers_and_exports_inspected",
+  "symbol_error": "",
+  "version": "4.1.0"
+}

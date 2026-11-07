@@ -1,0 +1,8 @@
+{
+  "apk_file_count": 1810,
+  "cache_files": null,
+  "help": "Pass --cache to a sanitized local directory that contains no accounts, tokens or personal data.",
+  "scope": "Only local APK is available; no online CDN or device cache claimed.",
+  "status": "no_runtime_cache_input",
+  "version": "4.1.0"
+}
