@@ -189,8 +189,9 @@ function readBirthdateUIState() {
     const day = birthViewPtr.add(0x60).readS32();
     const monthStatus = describeSmallDropdown(
       birthViewPtr, 0x30, 0x48, 4, 12);
+    // Day options may be rebuilt on month selection. April has 30 days.
     const dayStatus = describeSmallDropdown(
-      birthViewPtr, 0x38, 0x50, 5, 31);
+      birthViewPtr, 0x38, 0x50, 5, month === 4 ? 30 : 31);
     const yearValue = yearDropdown.isNull() ? null :
       yearDropdown.add(0x138).readS32();
     let count = null;
@@ -321,7 +322,7 @@ rpc.exports = {
         !ui.month_dropdown.value_index_equals_target ||
         !ui.day_dropdown.target_found_uniquely ||
         !ui.day_dropdown.target_option_text_verified ||
-        ui.day_dropdown.option_count !== 31 ||
+        ui.day_dropdown.option_count !== 30 ||
         ui.day_dropdown.target_index !== 4 ||
         ui.inputed_day_in_range) return false;
     optInDaySetArmed = true;
@@ -509,7 +510,7 @@ function install(lib) {
             ui.month_dropdown.value_index_equals_target &&
             ui.day_dropdown.target_found_uniquely &&
             ui.day_dropdown.target_index === 4 &&
-            ui.day_dropdown.option_count === 31 &&
+            ui.day_dropdown.option_count === 30 &&
             !ui.inputed_day_in_range) {
           localDaySetAttempted = true;
           this.dayTarget = dayDropdown;
