@@ -1,0 +1,94 @@
+name: HOME 4.1.0 Apple Silicon native ARM64 Android emulator feasibility
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/home41-macos-arm64-android-preflight.yml'
+      - 'ci/home41_arm64_device_preflight.py'
+      - 'ci/test_home41_arm64_device_preflight.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: home41-apple-silicon-native-android
+  cancel-in-progress: false
+
+jobs:
+  native-android:
+    name: Android 15 arm64-v8a on macOS Apple Silicon, no account operations
+    runs-on: macos-15
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify original APK and offline fixture safeguards
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile ci/home41_arm64_device_preflight.py
+          python -m unittest discover -s ci -p 'test_home41_arm64_device_preflight.py' -v
+          APK="$(find ROMS/4.1.0 -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          test "$(shasum -a 256 "$APK" | cut -d' ' -f1)" = "8dee598028cd70441f645c8fff96b093b76778d625cdf07c60109eced50ffac1"
+          echo "HOME41_APK=$APK" >> "$GITHUB_ENV"
+          mkdir -p ci-macos-arm64-results
+          uname -m
+      - name: Run actual ARM64 Android 35 emulator and launch original APK
+        id: android_attempt
+        continue-on-error: true
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: arm64-v8a
+          profile: pixel_5
+          ram-size: 4096M
+          heap-size: 512M
+          disable-animations: true
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: python ci/home41_arm64_device_preflight.py --apk "$HOME41_APK" --output ci-macos-arm64-results
+      - name: Interpret Android guest evidence without conflating macOS host
+        if: always()
+        env:
+          ANDROID_OUTCOME: ${{ steps.android_attempt.outcome }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          out=Path("ci-macos-arm64-results")
+          out.mkdir(exist_ok=True)
+          p=out/"home41_arm64_guest_preflight.json"
+          if not p.is_file():
+              p.write_text(json.dumps({
+                  "result":"android_emulator_setup_failed_before_probe",
+                  "android_native_arm64_status":"not_verified",
+                  "utid_hook_attempted":False,
+                  "first_basic_utid_status":"not_observed",
+                  "nintendo_account_bound":False,
+                  "registration_attempted":False},indent=2)+"\n",encoding="utf-8")
+          report=json.loads(p.read_text())
+          print(json.dumps({"action_outcome":os.environ["ANDROID_OUTCOME"],
+                            "result":report.get("result")},sort_keys=True))
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a",encoding="utf-8") as f:
+              f.write("## Android 15 ARM64 native emulator on macOS arm64\n\n")
+              f.write("- Runner: macos-15 Apple Silicon\n")
+              f.write("- Emulator action: `"+os.environ["ANDROID_OUTCOME"]+"`\n")
+              for key in ("result","android_native_arm64_status","android_primary_abi",
+                          "apk_installed","app_launched","app_process_alive",
+                          "utid_hook_attempted","first_basic_utid_status"):
+                  f.write(f"- {key}: `{report.get(key,'not_run')}`\n")
+              f.write("\nNo Nintendo Account binding, server registration, or ID hook attempt was made.\n")
+      - name: Upload sanitized preflight report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: home41-macos-native-arm64-android-preflight
+          path: ci-macos-arm64-results/
+          retention-days: 3
+          if-no-files-found: warn
