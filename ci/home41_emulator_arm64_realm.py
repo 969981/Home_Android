@@ -43,6 +43,12 @@ _ALLOWED_AGENT_EVENTS = frozenset({
     "year_1999_local_setter_armed",
     "year_1999_local_setter_returned",
     "year_1999_local_setter_failed",
+    "month_4_local_setter_armed",
+    "month_4_local_setter_returned",
+    "month_4_local_setter_failed",
+    "day_5_local_setter_armed",
+    "day_5_local_setter_returned",
+    "day_5_local_setter_failed",
 })
 
 
@@ -72,7 +78,8 @@ def sanitize_birth_ui(raw: object) -> dict:
         "controller_seen", "year_dropdown_present",
         "year_option_list_present", "inputed_year_in_supported_range",
         "inputed_year_equals_1999", "inputed_month_in_range",
-        "inputed_day_in_range", "exact_birthdate_selected",
+        "inputed_month_equals_4", "inputed_day_in_range",
+        "inputed_day_equals_5", "exact_birthdate_selected",
     )
     src=raw if isinstance(raw,dict) else {}
     n=src.get("year_option_count")
@@ -89,6 +96,12 @@ def sanitize_birth_ui(raw: object) -> dict:
             and 0<=src["year_1999_index"]<=300 else None
         ),
         "first_option_is_2026": src.get("first_option_is_2026") is True,
+        "month_setter_attempted": src.get("month_setter_attempted") is True,
+        "month_setter_returned": src.get("month_setter_returned") is True,
+        "month_setter_failure": src.get("month_setter_failure") is True,
+        "day_setter_attempted": src.get("day_setter_attempted") is True,
+        "day_setter_returned": src.get("day_setter_returned") is True,
+        "day_setter_failure": src.get("day_setter_failure") is True,
         "year_dropdown_value_index": (
             src.get("year_dropdown_value_index")
             if type(src.get("year_dropdown_value_index")) is int
@@ -135,9 +148,13 @@ def sanitized_arm64_snapshot(raw: object) -> dict:
 
 class ARM64RealmStageMonitor(StageMonitor):
     def __init__(self, server: Path, network_script: Path, arm64_script: Path,
-                 select_year_1999: bool=False):
+                 select_year_1999: bool=False,
+                 select_month_day: bool=False):
         super().__init__(server, network_script)
         self.select_year_1999 = select_year_1999
+        self.select_month_day = select_month_day
+        self.local_month_arm_result = "not_attempted"
+        self.local_day_arm_result = "not_attempted"
         self.local_year_set_arm_result = "not_attempted"
         self.arm64_script_path = arm64_script
         self.arm64_session = None
@@ -200,6 +217,36 @@ class ARM64RealmStageMonitor(StageMonitor):
             self.local_year_set_arm_result = "frida_rpc_error_" + type(err).__name__
             return False
 
+    def arm_local_month_4(self) -> bool:
+        if (not self.select_month_day or not self.arm64_agent or
+                self.arm64_realm_status != "emulated_realm_attached"):
+            self.local_month_arm_result = "not_eligible"
+            return False
+        try:
+            ok = self.arm64_agent.exports_sync.armlocalmonth4()
+            self.local_month_arm_result = (
+                "verified_month_option_arm_succeeded" if ok
+                else "native_month_options_not_verified")
+            return ok is True
+        except Exception as err:
+            self.local_month_arm_result = "frida_rpc_error_" + type(err).__name__
+            return False
+
+    def arm_local_day_5(self) -> bool:
+        if (not self.select_month_day or not self.arm64_agent or
+                self.arm64_realm_status != "emulated_realm_attached"):
+            self.local_day_arm_result = "not_eligible"
+            return False
+        try:
+            ok = self.arm64_agent.exports_sync.armlocalday5()
+            self.local_day_arm_result = (
+                "verified_day_option_arm_succeeded" if ok
+                else "native_day_options_not_verified")
+            return ok is True
+        except Exception as err:
+            self.local_day_arm_result = "frida_rpc_error_" + type(err).__name__
+            return False
+
     def finish(self) -> dict:
         evidence = {
             "status": self.arm64_realm_status,
@@ -207,6 +254,8 @@ class ARM64RealmStageMonitor(StageMonitor):
             "agent_script_error": self.arm64_script_error,
             "events": list(self.arm64_events),
             "local_year_set_arm_result": self.local_year_set_arm_result,
+            "local_month_arm_result": self.local_month_arm_result,
+            "local_day_arm_result": self.local_day_arm_result,
             "raw_utid_saved": False,
             "http_response_body_saved": False,
             "arm64_rvas_used_in_native_x64_realm": False,
@@ -239,6 +288,8 @@ def main() -> int:
     parser.add_argument("--settle-seconds", type=int, default=16)
     parser.add_argument("--select-local-year-1999", action="store_true",
                         help="OPT IN: one original Unity dropdown setter call; no date submission")
+    parser.add_argument("--select-local-month-day", action="store_true",
+                        help="OPT IN: original Unity month/day setters after verified 1999; no form submission")
     parser.add_argument("--probe-birthday-year", action="store_true",
                         help="Only open year picker after exact known birthdate UI; never submit")
     parser.add_argument("--probe-year-dpad", action="store_true",
@@ -246,13 +297,15 @@ def main() -> int:
     args = parser.parse_args()
     observer = ARM64RealmStageMonitor(
         args.server, args.network_script, args.arm64_script,
-        select_year_1999=args.select_local_year_1999)
+        select_year_1999=args.select_local_year_1999,
+        select_month_day=args.select_local_month_day)
     report = diag.run(
         args.apk, args.output, settle=max(3,min(60,args.settle_seconds)),
         observer=observer, select_china_mainland=True,
         probe_birthday_year=args.probe_birthday_year,
         probe_year_dpad=args.probe_year_dpad,
-        select_local_year_1999=args.select_local_year_1999)
+        select_local_year_1999=args.select_local_year_1999,
+        select_local_month_day=args.select_local_month_day)
     obs = report.get("stage_monitor", {})
     arm = obs.get("arm64_emulated_realm", {})
     snapshot = arm.get("snapshot", {})
@@ -272,6 +325,9 @@ def main() -> int:
         "year_keyboard_image_changed": report.get("year_keyboard_image_changed"),
         "local_year_setter_armed": obs.get("arm64_emulated_realm", {}).get(
             "local_year_set_arm_result"),
+        "local_month_setter_armed": arm.get("local_month_arm_result"),
+        "local_day_setter_armed": arm.get("local_day_arm_result"),
+        "local_month_day_probe": report.get("local_month_day_probe"),
         "frida_x64_status": obs.get("status"),
         "arm64_emulated_status": arm.get("status"),
         "arm64_emulated_error_type": arm.get("error_type"),
