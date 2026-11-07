@@ -91,6 +91,11 @@ let nativeYearItemSelectAttempted = false;
 let nativeYearItemSelectReturned = false;
 let nativeYearItemSelectConfirmed = false;
 let nativeYearItemSelectFailure = false;
+let optInNativeMonthItemSelect = false, optInNativeDayItemSelect = false;
+let nativeMonthItemSelectAttempted = false, nativeDayItemSelectAttempted = false;
+let nativeMonthItemSelectReturned = false, nativeDayItemSelectReturned = false;
+let nativeMonthItemSelectConfirmed = false, nativeDayItemSelectConfirmed = false;
+let nativeMonthItemSelectFailure = false, nativeDayItemSelectFailure = false;
 let optInMonthSetArmed = false, optInDaySetArmed = false;
 let localMonthSetAttempted = false, localDaySetAttempted = false;
 let localMonthSetterReturned = false, localDaySetterReturned = false;
@@ -302,6 +307,14 @@ rpc.exports = {
         native_year_item_select_returned: nativeYearItemSelectReturned,
         native_year_item_select_confirmed: nativeYearItemSelectConfirmed,
         native_year_item_select_failure: nativeYearItemSelectFailure,
+        native_month_item_select_attempted: nativeMonthItemSelectAttempted,
+        native_month_item_select_returned: nativeMonthItemSelectReturned,
+        native_month_item_select_confirmed: nativeMonthItemSelectConfirmed,
+        native_month_item_select_failure: nativeMonthItemSelectFailure,
+        native_day_item_select_attempted: nativeDayItemSelectAttempted,
+        native_day_item_select_returned: nativeDayItemSelectReturned,
+        native_day_item_select_confirmed: nativeDayItemSelectConfirmed,
+        native_day_item_select_failure: nativeDayItemSelectFailure,
         month_setter_attempted: localMonthSetAttempted,
         month_setter_returned: localMonthSetterReturned,
         month_setter_failure: localMonthSetterFailure,
@@ -347,6 +360,43 @@ rpc.exports = {
     optInNativeYearItemSelect = true;
     emit('year_native_item_select_armed', {
       original_onselect_pipeline: true,
+      birthday_submission_attempted: false
+    });
+    return true;
+  },
+  armnativemonthitemselect() {
+    if (!hooksReady || Process.arch !== 'arm64' ||
+        optInNativeMonthItemSelect || nativeMonthItemSelectAttempted ||
+        !nativeYearItemSelectConfirmed) return false;
+    const ui=readBirthdateUIState();
+    if (!ui.inputed_year_equals_1999 || !ui.year_dropdown_is_selected ||
+        !ui.year_dropdown_value_equals_1999_option ||
+        !ui.month_dropdown.target_found_uniquely ||
+        ui.month_dropdown.target_index !== 3 ||
+        ui.month_dropdown.option_count !== 12 ||
+        ui.month_dropdown.value_index_equals_target !== true ||
+        ui.month_dropdown_is_selected !== false) return false;
+    optInNativeMonthItemSelect = true;
+    emit('month_native_item_select_armed', {
+      birthday_submission_attempted: false
+    });
+    return true;
+  },
+  armnativedayitemselect() {
+    if (!hooksReady || Process.arch !== 'arm64' ||
+        optInNativeDayItemSelect || nativeDayItemSelectAttempted ||
+        !nativeYearItemSelectConfirmed ||
+        !nativeMonthItemSelectConfirmed) return false;
+    const ui=readBirthdateUIState();
+    if (!ui.inputed_year_equals_1999 || !ui.year_dropdown_is_selected ||
+        !ui.inputed_month_equals_4 || !ui.month_dropdown_is_selected ||
+        !ui.day_dropdown.target_found_uniquely ||
+        ui.day_dropdown.target_index !== 4 ||
+        ui.day_dropdown.option_count !== 30 ||
+        ui.day_dropdown.value_index_equals_target !== true ||
+        ui.day_dropdown_is_selected !== false) return false;
+    optInNativeDayItemSelect = true;
+    emit('day_native_item_select_armed', {
       birthday_submission_attempted: false
     });
     return true;
@@ -584,6 +634,8 @@ function install(lib) {
       this.monthTarget = null;
       this.dayTarget = null;
       this.nativeYearItemSelectTarget = null;
+      this.nativeMonthItemSelectTarget = null;
+      this.nativeDayItemSelectTarget = null;
       if (birthViewPtr === null) return;
       try {
         const ui = readBirthdateUIState();
@@ -598,6 +650,24 @@ function install(lib) {
             ui.year_1999_index === 27) {
           nativeYearItemSelectAttempted = true;
           this.nativeYearItemSelectTarget = yearDropdown;
+        } else if (optInNativeMonthItemSelect && !nativeMonthItemSelectAttempted &&
+            !monthDropdown.isNull() && args[0].equals(monthDropdown) &&
+            ui.year_dropdown_is_selected === true &&
+            ui.month_dropdown_is_selected === false &&
+            ui.month_dropdown.target_index === 3 &&
+            ui.month_dropdown.value_index_equals_target) {
+          nativeMonthItemSelectAttempted = true;
+          this.nativeMonthItemSelectTarget = monthDropdown;
+        } else if (optInNativeDayItemSelect && !nativeDayItemSelectAttempted &&
+            !dayDropdown.isNull() && args[0].equals(dayDropdown) &&
+            ui.year_dropdown_is_selected === true &&
+            ui.month_dropdown_is_selected === true &&
+            ui.day_dropdown_is_selected === false &&
+            ui.day_dropdown.target_index === 4 &&
+            ui.day_dropdown.option_count === 30 &&
+            ui.day_dropdown.value_index_equals_target) {
+          nativeDayItemSelectAttempted = true;
+          this.nativeDayItemSelectTarget = dayDropdown;
         } else if (optInYearSetArmed && !localYearSetAttempted &&
             !yearDropdown.isNull() && args[0].equals(yearDropdown) &&
             ui.year_option_count === 127 && ui.year_1999_index === 27 &&
@@ -654,6 +724,43 @@ function install(lib) {
         } catch (_) {
           nativeYearItemSelectFailure = true;
           emit('year_native_item_select_failed', {
+            birthday_submission_attempted: false
+          });
+        }
+      }
+      for (const item of [
+        {target: this.nativeMonthItemSelectTarget, index: 3, label: 'month_4'},
+        {target: this.nativeDayItemSelectTarget, index: 4, label: 'day_5'}
+      ]) {
+        if (item.target === null) continue;
+        if (item.label === 'month_4') optInNativeMonthItemSelect = false;
+        if (item.label === 'day_5') optInNativeDayItemSelect = false;
+        try {
+          originalOnSelectItem(item.target, item.index);
+          const ui=readBirthdateUIState();
+          const matched = item.label === 'month_4'
+            ? ui.inputed_month_equals_4 &&
+              ui.month_dropdown_is_selected === true &&
+              ui.month_dropdown.value_index_equals_target
+            : ui.inputed_day_equals_5 &&
+              ui.day_dropdown_is_selected === true &&
+              ui.day_dropdown.value_index_equals_target;
+          if (item.label === 'month_4') {
+            nativeMonthItemSelectReturned = true;
+            nativeMonthItemSelectConfirmed = matched;
+          } else {
+            nativeDayItemSelectReturned = true;
+            nativeDayItemSelectConfirmed = matched;
+          }
+          emit(item.label + '_native_item_select_returned', {
+            original_onselect_called: true,
+            is_selected_verified: matched,
+            birthday_submission_attempted: false
+          });
+        } catch (_) {
+          if (item.label === 'month_4') nativeMonthItemSelectFailure = true;
+          else nativeDayItemSelectFailure = true;
+          emit(item.label + '_native_item_select_failed', {
             birthday_submission_attempted: false
           });
         }
