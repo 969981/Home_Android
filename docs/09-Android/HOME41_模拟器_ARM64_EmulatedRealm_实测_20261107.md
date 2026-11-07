@@ -303,3 +303,16 @@ Python 运行器现在对 `--realm emulated` 进行特别预检：原始本地 A
 这轮 Action 最终状态 `failure` 源于一条额外的、现已确认不成立的测试假设：要求 `NativeFunction(OnSelectItem)` 调用同时触发同一 Frida Agent 的 `Interceptor.attach(OnSelectItem)` 事件（该计数实际为 0）。真实原版方法副作用、原版字段回读与截图**已独立验证**，不能因这条事件计数为零就否认 OnSelectItem 实际执行。因此 CI 已更换为可靠的三个证据：原版调用成功 + `isSelected=true` + 目标下拉文字局部像素变化，仍需人工最终核对具体文字。
 
 新扩展 `--probe-native-full-date-select` 使用同一原版 `OnSelectItem` 路径依次确认 **1999、4、5**；需要每步 UI 截图变化、组件 `isSelected=true`、`m_Value` 和控制器字段匹配，不会触碰【下一步】或服务端注册。**完整年月日 UI 可见测试尚需以最新实际 Actions Artifact 核对**，在此之前不声明已通过。
+
+
+## 2026-11-08：年份 UI 已修复；月份未执行原因是旧截图门槛
+
+最新 [Actions #42393405039](https://github.com/969981/Home_Android/actions/runs/42393405039)，Artifact `home41-arm64-emulated-realm-proof` ID **13582841225**，独立实机式模拟器运行结果：
+
+- 年：`native_year_item_select_attempted/returned/confirmed=true`，`year_dropdown_is_selected=true`，`year_caption_roi_changed=true`；截图 `17_native_year_OnSelectItem_after.png` 显示 **1999**，不再是【年】占位符。
+- 月/日：`native_month_item_select_attempted=false`、`native_day_item_select_attempted=false`；`native_month_select_arm_result=not_attempted`，说明**压根没有调用**原版月份选择方法，不能归咎于月日方法失效。
+- 真实截图 `18_native_month_before.png`：年份已显示“1999”，月份和日期仍为占位符。自动页面鉴别代码仍使用适合未选年份表单的旧像素规则 `at(.2,.29)≈(248,250,245)`；然而 1999 出现在此处后真实像素变为 **`(142,142,142)`**，因此页面前置检查错误拒绝了后续月份步骤。
+- 已新增严格的 `birthday_month_native` / `birthday_day_native` 页面状态签名，只有年份已可见时才识别该阶段。仍验证中文确认年龄标题、浅绿色背景、红字说明、原版下拉框底色和橙色下一步按钮位置；并由 Frida RPC 独立验证正确 Unity 控件实例、4月/5日原生 OptionData 索引。没有降低原版内存与用户选项安全条件。
+- 仍未点击【下一步】，没有账户创建、服务端回包和 UTID。
+
+此轮 Action `failure` 是刻意的严格 fail-closed：没有实际选月/日，就必须失败，不允许报告完整生日可视选择成功。最新重跑需检验 `month_dropdown_is_selected=true`、`day_dropdown_is_selected=true` 和截图中的“1999/4/5”。
