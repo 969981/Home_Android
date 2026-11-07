@@ -1,0 +1,74 @@
+name: HOME 4.1.0 ARM64 native birthday UI disassembly evidence
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/home41-birthyear-native-disasm.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate APK and disassemble exact ARM64 birthday UI methods
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find ROMS/4.1.0 -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          test "$(sha256sum "$APK" | awk '{print $1}')" = "8dee598028cd70441f645c8fff96b093b76778d625cdf07c60109eced50ffac1"
+          mkdir -p ci-birthyear-native
+          unzip -p "$APK" lib/arm64-v8a/libil2cpp.so > /tmp/home41-libil2cpp.so
+          test "$(sha256sum /tmp/home41-libil2cpp.so | awk '{print $1}')" = "80bfbc3d480bf3c91297d65a441a37e40260b70fd8b0ddc8da70c34f0870b6fe"
+          if command -v llvm-objdump >/dev/null 2>&1; then
+            OBJDUMP=llvm-objdump
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq binutils-aarch64-linux-gnu
+            OBJDUMP=aarch64-linux-gnu-objdump
+          fi
+          declare -a entries=(
+            "birthdata_setdata:0x1C80964:0x1C80D84"
+            "birthdata_onyear:0x1C80EF8:0x1C814C0"
+            "custom_dropdown_setvalue:0x1F1400C:0x1F14158"
+            "custom_dropdown_onselect:0x1F15084:0x1F15180"
+            "custom_scroll_open:0x1F14C90:0x1F14D00"
+          )
+          for item in "${entries[@]}"; do
+            IFS=: read -r name begin end <<< "$item"
+            "$OBJDUMP" -d --start-address="$begin" --stop-address="$end" /tmp/home41-libil2cpp.so \
+              > "ci-birthyear-native/${name}.asm"
+            test -s "ci-birthyear-native/${name}.asm"
+          done
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('ci-birthyear-native')
+          files=sorted(p.glob('*.asm'))
+          sizes={x.name:x.stat().st_size for x in files}
+          (p/'audit_summary.json').write_text(json.dumps({
+              'source':'verified original HOME Android 4.1.0 ARM64 libil2cpp.so',
+              'static_disassembly_available':True,
+              'methods':sizes,
+              'runtime_1999_value_verified':False,
+              'input_birthday_submitted':False,
+              'account_created':False,
+              'no_patches_or_network_requests':True
+          },indent=2)+'\n')
+          print(sizes)
+          assert len(files)==5 and min(sizes.values())>100
+          PY
+      - name: Upload verified native method disassembly (not a runtime trace)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: home41-birthyear-native-callsite-audit
+          path: ci-birthyear-native/
+          retention-days: 5
+          if-no-files-found: warn
