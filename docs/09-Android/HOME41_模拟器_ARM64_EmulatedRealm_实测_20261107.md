@@ -200,3 +200,24 @@ Python 运行器现在对 `--realm emulated` 进行特别预检：原始本地 A
 因此，**静态上**已闭合“下拉选中某个整数 index → 列表解析年份文字 → 写入客户端本地 inputedYear”的路径。但是 Frida 的 `OnYearChageValue` 并未实测命中；只有在真实运行中读取到 `1999` 的正确选项索引、方法实际被调用且本地 UI 显示 `1999` 后，才可以声称选中了 1999。更不能用调用客户端 setter 推断生日已提交服务器。
 
 当前公开 ARM64 agent 在 `ci/home41_arm64_auth_timeline.js` 增加只读 `SetData/OnYearChageValue/OnMonthChangeValue/OnDayChangeValue` 观察和 `yearOptionDataList` 查找。Action 以 `ci/home41_emulator_arm64_realm.py` 严格脱敏输出，只在模拟器中安装 Hook、不发出修改应用内存的指令。
+
+
+## 2026-11-08：年份内部字段与界面显示不一致，追加月份/日期原生选项审计
+
+真实 [Actions #42385406639](https://github.com/969981/Home_Android/actions/runs/42385406639) 先已验证：
+- `Frida emulated realm` 与原版 `libil2cpp.so` 均可运行，所有 Hook 安装成功；
+- `yearOptionDataList._size=127`，首项 `2026`，`1999` 位于索引 `27`；
+- 用户显式测试模式仅调用一次原版 `CustomTMPDropdown.set_value(27)`，并由本地 `inputedYear==1999` 读回验收；
+- 但人工查看真实截图 `10_year1999_form_after_back.png`，**年份框显示的仍是“年”，不是“1999”**。因此本地字段的正确性**不能替代界面显示已选择**，也不能提交生日。
+- `inputedMonth`、`inputedDay` 均未设定；注册、Token、登录和 `SetBasic` 事件为零，未拿到 UTID。
+
+本阶段从私有原版 `dump.cs` 的 **真实类型布局**（[审计 Actions #42384315106](https://github.com/969981/PokeHome_Resources/actions/runs/42384315106)，`birthdate_class_layouts.json`）补齐：
+- `FirstBootViewInputBirthData.monthDropdown +0x30`，`dayDropdown +0x38`；
+- `monthOptionDataList +0x48`，`dayOptionDataList +0x50`；
+- 原版月/日变更回调 RVA：`OnMonthChangeValue 0x1C814C0`、`OnDayChangeValue 0x1C8181C`；
+- `CustomTMPDropdown.m_Value +0x138` 是独立于控制器 `inputedYear +0x58` 的组件当前索引。
+
+新增只读 Agent 辅助方法 `describeSmallDropdown`，只读取 4 月、5 日目标选项的**唯一索引、列表长度、组件当前索引是否匹配**。限制：只有可信的短数字标签（例如 `4`、`04`、`4月`）和 `12/31` 个预期选项才认定目标位置；不上传任何完整列表、出生日期、账号信息或原始指针。若文字含本地化附加符号或列表排序不同，安全输出 `target_found_uniquely=false`，不会猜索引。
+
+下一步应对 **`inputedYear==1999` 与年份框依然显示“年”**的现象做 A/B 测试：先检查 `yearDropdown.m_Value` 是否等于 27，再观察弹窗关闭后 `RefreshShownValue` 是否让显示文字回到占位符。只有内存状态、组件索引和真实界面同时通过才执行下一步的 4 月/5 日选择。当前代码不自动提交日期或接受服务条款，不批量创建账号。
+
