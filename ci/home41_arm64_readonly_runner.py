@@ -120,7 +120,7 @@ def installed_apk_integrity(serial: str | None = None) -> str:
     checked = adb(["shell", "sha256sum", base], serial, timeout=50)
     if not checked or checked.returncode != 0:
         return "installed_apk_hash_unavailable"
-    match = re.match(r"^([0-9a-fA-F]{64})\\s", (checked.stdout or ""))
+    match = re.match(r"^([0-9a-fA-F]{64})\s", (checked.stdout or ""))
     if not match:
         return "installed_apk_hash_unavailable"
     return "installed_apk_hash_verified" if match.group(1).lower() == APK_SHA256 else "installed_apk_hash_mismatch"
