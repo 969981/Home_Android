@@ -89,7 +89,7 @@ jobs:
           heap-size: 512M
           disable-animations: true
           emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
-          script: python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --select-local-year-1999 --select-local-month-day --probe-native-year-select
+          script: python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --select-local-year-1999 --select-local-month-day --probe-native-full-date-select
 
       - name: Report strict ARM64 realm results and ordinary UI evidence
         if: always()
@@ -238,9 +238,44 @@ jobs:
                   and ui.get("native_year_item_select_confirmed") is True
                   and ui.get("native_year_item_select_failure") is False
                   and ui.get("year_dropdown_is_selected") is True
-                  and ui.get("year_item_selected_index") == 27
-                  and ui.get("year_item_selection_count", 0) >= 1):
-              raise SystemExit("NOT VERIFIED: original OnSelectItem did not set isSelected and retain 1999")
-          print("VERIFIED: native OnSelectItem(27) and isSelected=true on original year dropdown")
-          print("NO CLAIM: visual year caption confirmed, DOB submitted, registered, or UTID received")
+                  and ui.get("year_dropdown_value_equals_1999_option") is True
+                  and probe.get("year_caption_roi_changed") is True):
+              raise SystemExit("NOT VERIFIED: original year OnSelectItem did not change UI caption")
+          print("VERIFIED: year original OnSelectItem, isSelected=true and year caption changed")
+          # Frida-generated NativeFunction invokes original entry but may
+          # not re-enter an Interceptor in the same agent. Do not require
+          # a second same-function interception counter.
+          for key in (
+              "native_month_item_select_armed",
+              "native_month_item_select_tapped",
+              "native_month_item_select_screenshot_saved",
+              "month_caption_roi_changed",
+              "native_day_item_select_armed",
+              "native_day_item_select_tapped",
+              "native_day_item_select_screenshot_saved",
+              "day_caption_roi_changed"
+          ):
+              if probe.get(key) is not True:
+                  raise SystemExit("NOT VERIFIED: original date UI step " + key)
+          if not (
+              ui.get("native_month_item_select_attempted") is True
+              and ui.get("native_month_item_select_returned") is True
+              and ui.get("native_month_item_select_confirmed") is True
+              and ui.get("native_month_item_select_failure") is False
+              and ui.get("native_day_item_select_attempted") is True
+              and ui.get("native_day_item_select_returned") is True
+              and ui.get("native_day_item_select_confirmed") is True
+              and ui.get("native_day_item_select_failure") is False
+              and ui.get("year_dropdown_is_selected") is True
+              and ui.get("month_dropdown_is_selected") is True
+              and ui.get("day_dropdown_is_selected") is True
+              and ui.get("exact_birthdate_selected") is True
+              and r.get("birthday_submitted") is False
+              and r.get("registration_status") == "not_attempted"
+              and Path("ci-frida-results/19_native_month_OnSelectItem_after.png").is_file()
+              and Path("ci-frida-results/20_native_day_OnSelectItem_after.png").is_file()
+          ):
+              raise SystemExit("NOT VERIFIED: original year/month/day UI OnSelectItem or internal date state")
+          print("VERIFIED: original 1999/4/5 OnSelectItem and all three captions visually changed")
+          print("NO CLAIM: birthday submitted, account registered or UTID observed")
           PY
