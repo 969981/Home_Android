@@ -147,3 +147,46 @@ py -3 ci/home41_arm64_runtime_acceptance.py --apk "$apk" --target 888888 --timeo
 目前 GitHub 托管 Linux ARM64 / macOS Apple Silicon Android Emulator 实验均无法提供工作中的 ARM64 Android 客体；当前助手运行容器也没有 `adb` 或已连接的 Android 设备。因此**不能将 22 项模拟测试等价为你要求的三项真实验收**。
 
 公开仓库只保存观察器、校验流程和脱敏通过/失败报告；使用者在本人设备上手工输入的六位 ID 不回显、不写入日志，也不上传 Github。
+
+
+## 8. 新增：不打开小火龙详情，直接在本地监控显示首次 HOME basic.utid
+
+场景：不绑定 Nintendo Account，完成官方正常初始化时直接观察 `ResponseParamCommon.basic → UDManager.SetBasic` 的首次 `utid`，**无需点开小火龙资料页才能看到六位候选 ID**。但是下面两个数据语义必须保持分开：
+
+| 字段 | 含义 | 验证等级 |
+| --- | --- | --- |
+| `UD_Basic.utid` | 官方 HOME 服务端向 APP 下发的基础资料字段，按字符串保留在 IL2CPP managed object 的 `+0xF0` | 原生静态路径已分析；实时捕获尚未实机 |
+| `six_digit_candidate` | 当前候选：`int(utid) % 1000000`，不足 6 位左补零 | 算法只是对既有 UTID 的数值表示；**未独立证明等于小火龙 OT 训练家 ID** |
+| 小火龙原始训练家 `OT/TID/SID` | 记录在宝可梦个体数据中 | 尚未在原版 HOME 首发小火龙数据和 `basic.utid` 之间闭合证据链 |
+
+**监控命令：**
+
+```powershell
+git pull origin master
+py -3 -m pip install frida
+$apk = (Get-ChildItem 'ROMS/4.1.0/*.apk' | Select-Object -First 1).FullName
+
+py -3 ci/home41_arm64_readonly_runner.py observe `
+    --apk "$apk" `
+    --target 888888 `
+    --timeout 600 `
+    --show-local-id
+```
+
+前提仍是你本人拥有/控制的原生 ARM64 Android 设备，Android 中安装的 **原版** HOME 4.1.0（versionCode 81）、兼容的 Frida Server，以及正常 USB/ADB 访问。没有这些条件，脚本不会伪造服务器响应或创建账号。
+
+当实际 `SetBasic` 第一次读到合法 32 位十进制 `utid` 且调用返回地址符合 `libil2cpp.so + 0x1D2BA68` 时，**在你本人电脑终端中**显示如下格式（数字是文档例子，不代表真实捕获）：
+
+```text
+[LOCAL TERMINAL ONLY] basic.utid (server profile): 4012345678
+[LOCAL TERMINAL ONLY] six-digit candidate: 345678
+[UNVERIFIED] This is a candidate from HOME basic.utid, NOT yet proven to be Charmander's Pokemon OT ID.
+```
+
+一般进度事件仍然只输出 `hook_armed`、`registration_callback_entered`、`first_basic_utid_observed`、`candidate_matches_target` 等不包含账户号的 JSON。此选项需要**交互式本地终端**，若环境变量 `GITHUB_ACTIONS=true` 或输出不是 TTY，则直接拒绝显示真实号码；脚本不写入本地日志文件、GitHub Action Artifact、Discord/Webhook，也不上传服务器。
+
+读取实现：`home41_utid_readonly_arm64.js` 用 Frida `rpc.exports.localidentity()` 将**仅在内存中缓存的**原始字段与六位候选数提供给当前有权限的本地 Frida 主机，只有 Python 显式设置 `--show-local-id` 才调用这个 RPC；接收第一个合法数字后停止进一步监听，断开 Frida，不主动关闭官方 APP。RPC 的数据本质上会经过本机调试链路，但不会进入默认公开日志。
+
+**第一次请仍独立核对一次小火龙本人的 OT/TID 数据**。如果它与六位候选值相等，才有该测试账号的直接证据；不能从一次巧合推广到所有账号，不应将 HOME 账号 UTID 与任何宝可梦 OT ID 预设为必然相同。后续可以继续研究小火龙原始宝可梦结构里的 OT/TID/SID，做到两个独立来源交叉验证，而不是永远依赖打开详情页。
+
+本阶段最新离线回归：[`#42367962990`](https://github.com/969981/Home_Android/actions/runs/42367962990) 成功，新增对原始 ID 数值一致性、GitHub Actions/TTY 防泄露、错误公共响应来源和本地显式显示的测试。**本次没有连接真实 ARM64 Android，也没有真正读到任何个人 HOME 账号 ID。**
