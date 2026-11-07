@@ -122,6 +122,7 @@ jobs:
                   birth=snap.get('birthdate_ui',{})
                   for key in ('controller_seen','year_dropdown_present',
                               'year_option_list_present','year_option_count',
+                              'year_1999_index','first_option_is_2026',
                               'inputed_year_equals_1999','exact_birthdate_selected'):
                       f.write(f'- Birthdate UI {key}: \`{birth.get(key,"unavailable")}\`\\n')
                   net=monitor.get('network',{})
