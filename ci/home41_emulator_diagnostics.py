@@ -354,7 +354,8 @@ def redacted_system_diagnostics() -> dict:
 def run(apk: Path, out: Path, settle: int = 25,
         observer=None, select_china_mainland: bool = False,
         probe_birthday_year: bool = False,
-        probe_year_dpad: bool = False) -> dict:
+        probe_year_dpad: bool = False,
+        select_local_year_1999: bool = False) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     report = {
         "version": "4.1.0", "device": "disposable_github_actions_avd",
@@ -373,6 +374,8 @@ def run(apk: Path, out: Path, settle: int = 25,
         "year_keyboard_probe_sent": False,
         "year_popup_verifiable_after_keyboard": False,
         "year_keyboard_image_changed": False,
+        "year1999_local_setter_arm_requested": False,
+        "year1999_local_setter_screenshot_saved": False,
         "birthday_submitted": False,
         "account_delete_attempted": False,
         "first_basic_utid_status": "not_observed",
@@ -475,12 +478,33 @@ def run(apk: Path, out: Path, settle: int = 25,
         if probe_birthday_year and report["country_confirmation_clicked"]:
             # One deliberate local control tap; no date value or next button.
             birthday = screenshot(out, "07_birthdate_before_year_picker.png")
-            report["birthday_year_dropdown_tapped"] = click_if_known(
-                birthday, "birthday_year_dropdown")
+            ui_is_birth_form = bool(birthday and match_known_ui(
+                birthday, "birthday_year_dropdown") is not None)
+            if select_local_year_1999 and ui_is_birth_form:
+                report["year1999_local_setter_arm_requested"] = bool(
+                    observer is not None and hasattr(observer, "arm_local_year_1999")
+                    and observer.arm_local_year_1999())
+            safe_to_tap = ui_is_birth_form and (
+                not select_local_year_1999 or
+                report["year1999_local_setter_arm_requested"])
+            if safe_to_tap:
+                report["birthday_year_dropdown_tapped"] = click_if_known(
+                    birthday, "birthday_year_dropdown")
             if report["birthday_year_dropdown_tapped"]:
                 time.sleep(3)
                 first_popup = screenshot(out, "08_birthdate_year_picker_open.png")
                 report["birthday_year_picker_screenshot_saved"] = bool(first_popup)
+                if select_local_year_1999:
+                    report["year1999_local_setter_screenshot_saved"] = bool(
+                        screenshot(out,"09_year1999_after_local_setter.png"))
+                    # A local year may be selected while the popup is open.
+                    # The only follow-up is a BACK key (previous experiments
+                    # verified this safely closes the dropdown). NEVER NEXT.
+                    if first_popup and match_known_ui(
+                            first_popup, "year_popup_open") is not None:
+                        adb("shell","input","keyevent","KEYCODE_BACK",timeout=12)
+                        time.sleep(2)
+                        screenshot(out,"10_year1999_form_after_back.png")
                 if probe_year_dpad and first_popup and match_known_ui(
                         first_popup,"year_popup_open") is not None:
                     # One non-activating keyboard navigation key, NEVER Enter,
