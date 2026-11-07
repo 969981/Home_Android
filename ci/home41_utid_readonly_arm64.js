@@ -30,6 +30,27 @@ const STAGE = {
 const began = Date.now();
 let armed = false;
 let captured = false;
+// Stay in the Frida agent memory only; never send the six digits to the host.
+let cachedCandidate = null;
+let observedCommonBasicCaller = false;
+rpc.exports = {
+  comparevisibleid(id) {
+    const valid = typeof id === 'string' && /^[0-9]{6}$/.test(id);
+    return {
+      first_basic_seen: cachedCandidate !== null,
+      valid_six_digit_input: valid,
+      displayed_id_matches: valid && cachedCandidate !== null && cachedCandidate === id,
+      source_common_response_consumer: observedCommonBasicCaller
+    };
+  },
+  observerstatus() {
+    return {
+      native_arm64: Process.arch === 'arm64',
+      hooks_initialized: armed,
+      first_basic_seen: cachedCandidate !== null
+    };
+  }
+};
 // Deliver structured, redacted events to the locally attached Frida host.
 // Do not print the raw UTID, UUID, CID, session cookie or authorization token.
 const output = (event, details = {}) => send({
@@ -94,11 +115,12 @@ function activate(lib) {
           return;
         }
         captured = true;
+        cachedCandidate = candidate;
+        observedCommonBasicCaller = this.context.lr.equals(ptr(RVA.commonBasicReturn));
         output('first_basic_utid_observed', {
           public_output_is_redacted: true,
           candidate_matches_target: candidate === EXPECTED_TARGET,
-          source_common_response_consumer:
-            this.context.lr.equals(ptr(RVA.commonBasicReturn)),
+          source_common_response_consumer: observedCommonBasicCaller,
           registration_callback_seen: STAGE.register_response_seen,
           token_callback_seen: STAGE.token_response_seen,
           login_callback_seen: STAGE.login_response_seen,
