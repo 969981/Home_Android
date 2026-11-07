@@ -1,3 +1,5 @@
 # Install after audit/scan confirmed Unity containers. Keep versions logged in reports.
 UnityPy>=1.20,<2
 Pillow>=10,<13
+trimesh>=4,<5
+numpy>=1.26,<3

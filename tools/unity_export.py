@@ -16,9 +16,9 @@ from home import ROOT, dump, hash_file, write_rows
 
 HEADERS = ["source_path", "source_bytes", "path_id", "type", "name",
            "output_path", "output_sha256", "status", "error", "tool_version"]
-SUPPORTED = {"Texture2D", "Sprite", "TextAsset", "Mesh"}
+SUPPORTED = {"Texture2D", "Sprite", "TextAsset", "Mesh", "Font", "AudioClip"}
 INVENTORY_ONLY = {"Material", "AnimationClip", "Animator", "Animation",
-                  "SkinnedMeshRenderer", "MeshRenderer", "AudioClip",
+                  "SkinnedMeshRenderer", "MeshRenderer",
                   "GameObject", "MonoBehaviour", "Shader"}
 
 def clean_name(s: str) -> str:
@@ -119,6 +119,43 @@ def export(version: str, root: Path, report: Path, output: Path, max_size_mib: i
                         export_path = output / "text" / (output_stem + suffix)
                         export_path.parent.mkdir(parents=True, exist_ok=True)
                         export_path.write_bytes(blob)
+                    elif obj_type == "Font":
+                        font_blob = bytes(getattr(data, "m_FontData", b"") or b"")
+                        if not font_blob:
+                            row["status"] = "identified_only"
+                            row["error"] = "No embedded font bytes"
+                            stats["identified_only"] += 1
+                            rows.append(row)
+                            continue
+                        ext = ".otf" if font_blob[:4] == b"OTTO" else ".ttf" if font_blob[:4] in (bytes.fromhex("00010000"),b"true") else ".bin"
+                        export_path = output / "fonts" / (output_stem + ext)
+                        export_path.parent.mkdir(parents=True, exist_ok=True)
+                        export_path.write_bytes(font_blob)
+                    elif obj_type == "AudioClip":
+                        try:
+                            samples = data.samples
+                        except Exception as audio_exc:
+                            row["status"] = "identified_only"
+                            row["error"] = "Audio decoder unavailable: " + str(audio_exc)[:300]
+                            stats["audio_decoder_unavailable"] += 1
+                            rows.append(row)
+                            continue
+                        if not samples:
+                            row["status"] = "identified_only"
+                            row["error"] = "No decodable audio samples"
+                            stats["audio_no_decodable_samples"] += 1
+                            rows.append(row)
+                            continue
+                        saved = []
+                        for sample_name, blob in samples.items():
+                            audio_bytes = bytes(blob)
+                            ext = ".wav" if audio_bytes[:4] == b"RIFF" else ".ogg" if audio_bytes[:4] == b"OggS" else ".bin"
+                            sample_path = output / "audio" / (output_stem + "_" + clean_name(str(sample_name)) + ext)
+                            sample_path.parent.mkdir(parents=True, exist_ok=True)
+                            sample_path.write_bytes(audio_bytes)
+                            saved.append(sample_path)
+                        export_path = saved[0]
+                        stats["audio_sample_files"] += len(saved)
                     else:
                         # Geometry only: Wavefront OBJ does NOT prove materials/rig/animation.
                         geom = data.export()
@@ -136,6 +173,12 @@ def export(version: str, root: Path, report: Path, output: Path, max_size_mib: i
                     # nothing here is a playable or validated 3D export.
                     row["status"] = "identified_only"
                     stats["identified_only"] += 1
+            except IsADirectoryError as exc:
+                # Certain built-in "Font Texture" objects have an unresolved
+                # external pixel path. Do not invent replacement pixels.
+                row["status"] = "unresolved_texture_stream"
+                row["error"] = str(exc)[:400]
+                stats["unresolved_texture_stream"] += 1
             except Exception as exc:
                 row["status"] = "export_failed"
                 row["error"] = str(exc)[:400]
@@ -145,7 +188,7 @@ def export(version: str, root: Path, report: Path, output: Path, max_size_mib: i
     write_rows(report / "unity_objects.csv", rows, HEADERS)
     summary = dict(version=version, apk_sha256=apk_sha, tool=tool_version,
                    candidate_containers=len(items), **dict(sorted(stats.items())),
-                   status="completed_with_failures" if stats["containers_failed"] or stats["object_export_failed"]
+                   status="completed_with_failures" if stats["containers_failed"] or stats["object_export_failed"] or stats["unresolved_texture_stream"]
                    else "completed", scope="Local APK Unity candidates only",
                    note="Mesh OBJ is geometry only; rigging, materials, motion and GLB are not validated.")
     dump(report / "unity_summary.json", summary)

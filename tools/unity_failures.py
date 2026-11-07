@@ -17,7 +17,7 @@ def run(version,report):
         raise SystemExit("Need unity_objects.csv from unity_export.py first")
     with source.open("r",encoding="utf-8-sig",newline="") as f:
         rows=[r for r in csv.DictReader(f) if r["status"] in
-              {"parse_failed","export_failed","skipped_too_large"}]
+              {"parse_failed","export_failed","skipped_too_large","unresolved_texture_stream"}]
     write_rows(report/"unity_failures.csv",rows,FIELDS)
     summary={"version":version,"total_failures_or_skips":len(rows),
              "by_status":dict(Counter(r["status"] for r in rows)),
