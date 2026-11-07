@@ -218,10 +218,45 @@ def local_values(values: object, *, interactive: bool) -> bool:
     return True
 
 
+def preflight_for_realm(apk: Path, serial: str | None, realm: str) -> dict:
+    """A native ARM64 device or a known x86+ARM native-bridge guest.
+
+    The emulated agent itself MUST still report ARM64 + all native hooks
+    installed; allowing this preflight does not certify translated execution.
+    """
+    if realm == "native":
+        return core.preflight(apk, serial)
+    if realm != "emulated":
+        return {"result": "invalid_frida_realm"}
+    if not apk.is_file():
+        return {"result": "apk_missing"}
+    if core.digest(apk) != core.APK_SHA256:
+        return {"result": "apk_hash_mismatch"}
+    abi = core.android_prop("ro.product.cpu.abi", serial)
+    bridge = core.android_prop("ro.dalvik.vm.native.bridge", serial)
+    if abi not in ("x86_64", "x86") or not bridge or bridge in ("0", "false"):
+        return {"result": "native_bridge_arm_emulation_not_configured"}
+    installed = core.adb(["shell", "dumpsys", "package", core.PACKAGE], serial)
+    from_text = installed.stdout if installed and installed.returncode == 0 else ""
+    if "81" not in __import__("re").findall(r"\\bversionCode=(\\d+)\\b", from_text or ""):
+        return {"result": "wrong_or_missing_installed_home_version"}
+    return {
+        "result": "emulated_arm64_guest_preflight_ok",
+        "primary_abi": abi,
+        "native_bridge_present": True,
+        "original_apk_hash_matched": True,
+        "installed_home_version_code": "81",
+        "guest_arm64_agent_and_hooks_verified": False,
+    }
+
+
 def run(apk: Path, script_path: Path, serial: str | None,
-        timeout: int, output: Path | None, show_local_values: bool) -> int:
-    verified = core.preflight(apk, serial)
-    if verified.get("result") != "native_arm64_original_apk_preflight_ok":
+        timeout: int, output: Path | None, show_local_values: bool,
+        realm: str = "native", remote_frida: bool = False) -> int:
+    verified = preflight_for_realm(apk, serial, realm)
+    good = ("native_arm64_original_apk_preflight_ok" if realm == "native"
+            else "emulated_arm64_guest_preflight_ok")
+    if verified.get("result") != good:
         print(json.dumps({"status": "native_arm64_preflight_failed",
                           "preflight_result": verified.get("result")}, sort_keys=True))
         return 2
@@ -238,7 +273,9 @@ def run(apk: Path, script_path: Path, serial: str | None,
     script_source = script_path.read_text(encoding="utf-8")
     try:
         import frida
-        device = (frida.get_device(serial, timeout=12) if serial
+        device = (frida.get_device_manager().add_remote_device(
+                    "127.0.0.1:27042") if remote_frida
+                  else frida.get_device(serial, timeout=12) if serial
                   else frida.get_usb_device(timeout=12))
     except Exception as err:
         print(json.dumps({"status": "frida_unavailable",
@@ -278,7 +315,8 @@ def run(apk: Path, script_path: Path, serial: str | None,
 
     try:
         pid = device.spawn([core.PACKAGE])
-        session = device.attach(pid)
+        session = (device.attach(pid, realm="emulated") if realm == "emulated"
+                   else device.attach(pid))
         script = session.create_script(script_source)
         script.on("message", on_message)
         script.load()
@@ -314,7 +352,17 @@ def run(apk: Path, script_path: Path, serial: str | None,
                 pass
 
     report = analyze_events(events, ready, script_error)
-    report["execution_context"] = "runtime_device_direct"  # not CI or fixture
+    report["execution_context"] = (
+        "runtime_emulated_arm64_agent" if realm == "emulated"
+        else "runtime_device_direct")
+    report["host_android_primary_abi"] = verified.get("primary_abi", "arm64-v8a")
+    report["frida_realm"] = realm
+    # The ready event proves hook installation inside the guest realm,
+    # not that a registration callback or a backend response was observed.
+    report["arm64_agent_hooks_armed"] = ready and report["status"] not in {
+        "arm64_hooks_partial", "runtime_script_error",
+        "native_arm64_preflight_failed",
+    }
     report["frida_exception_type"] = script_error if script_error in {
         "runtime_script_error", "TransportError", "ServerNotRunningError",
         "InvalidOperationError", "TimedOutError"} else (
@@ -334,6 +382,10 @@ def main() -> int:
     parser.add_argument("--script", type=Path,
                         default=Path(__file__).with_name("home41_arm64_auth_timeline.js"))
     parser.add_argument("--serial")
+    parser.add_argument("--realm", choices=("native", "emulated"), default="native",
+                        help="Use emulated only for x86+ARM NativeBridge Frida realm")
+    parser.add_argument("--remote-frida", action="store_true",
+                        help="Connect to locally adb-forwarded 127.0.0.1:27042")
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--output", type=Path,
                         help="Optional sanitized summary, never raw IDs or request contents")
@@ -341,7 +393,8 @@ def main() -> int:
                         help="Explicit opt-in: display DTO integers and UTID on a local TTY only")
     args = parser.parse_args()
     return run(args.apk, args.script, args.serial, args.timeout,
-               args.output, args.show_local_values)
+               args.output, args.show_local_values,
+               realm=args.realm, remote_frida=args.remote_frida)
 
 
 if __name__ == "__main__":
