@@ -77,6 +77,34 @@ class NetworkMetadataTests(unittest.TestCase):
         self.assertEqual(loc,(540,int(2340*.54)))
         self.assertIsNone(stage.diag.match_known_ui(buf.getvalue(),"terms"))
 
+    def test_birthdate_year_picker_requires_exact_known_screen(self):
+        # Synthetic signature is derived from a real, verified HOME 4.1.0
+        # AVD screenshot. This test does NOT enter or submit any date.
+        img=Image.new("RGB",(1080,2340),(0,0,0))
+        samples=[
+            ((.5,.14),(38,179,151)),
+            ((.5,.24),(198,242,161)),
+            ((.2,.29),(248,250,245)),
+            ((.8,.29),(248,250,245)),
+            ((.4,.34),(240,30,30)),
+            ((.7,.95),(255,173,4)),
+        ]
+        for (x,y),rgb in samples:
+            img.putpixel((int(1080*x),int(2340*y)),rgb)
+        png=io.BytesIO()
+        img.save(png,format="PNG")
+        self.assertEqual(stage.diag.match_known_ui(
+            png.getvalue(),"birthday_year_dropdown"),
+            (int(1080*.285),int(2340*.287)))
+        self.assertIsNone(stage.diag.match_known_ui(
+            png.getvalue(),"terms"))
+        # A wrong header is a new or unrecognized page: do not tap.
+        img.putpixel((int(1080*.5),int(2340*.14)),(0,0,0))
+        new=io.BytesIO()
+        img.save(new,format="PNG")
+        self.assertIsNone(stage.diag.match_known_ui(
+            new.getvalue(),"birthday_year_dropdown"))
+
     def test_country_confirmation_requires_real_modal_signature(self):
         img=Image.new("RGB",(1080,2340),(17,17,17))
         pts=[
