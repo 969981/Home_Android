@@ -77,6 +77,29 @@ class NetworkMetadataTests(unittest.TestCase):
         self.assertEqual(loc,(540,int(2340*.54)))
         self.assertIsNone(stage.diag.match_known_ui(buf.getvalue(),"terms"))
 
+    def test_country_confirmation_requires_real_modal_signature(self):
+        img=Image.new("RGB",(1080,2340),(17,17,17))
+        pts=[
+            ((.5,.02),(126,151,101)),
+            ((.5,.14),(23,107,91)),
+            ((.5,.36),(247,251,247)),
+            ((.5,.53),(247,251,247)),
+            ((.71,.635),(255,175,12)),
+            ((.2,.635),(247,251,247)),
+        ]
+        for (x,y),color in pts:
+            img.putpixel((int(1080*x),int(2340*y)),color)
+        buf=io.BytesIO()
+        img.save(buf,format="PNG")
+        self.assertEqual(
+            stage.diag.match_known_ui(buf.getvalue(),"country_confirmation"),
+            (int(1080*.71),int(2340*.635)))
+        img.putpixel((int(1080*.71),int(2340*.635)),(10,10,10))
+        buf=io.BytesIO()
+        img.save(buf,format="PNG")
+        self.assertIsNone(
+            stage.diag.match_known_ui(buf.getvalue(),"country_confirmation"))
+
     def test_unknown_ui_never_selects_country(self):
         self.assertIsNone(stage.diag.match_known_ui(b"","china_mainland"))
         self.assertIsNone(stage.diag.match_known_ui(b"not-an-image","china_mainland"))
