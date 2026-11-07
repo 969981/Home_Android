@@ -89,7 +89,7 @@ jobs:
           heap-size: 512M
           disable-animations: true
           emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
-          script: python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --select-local-year-1999 --select-local-month-day --probe-year-touch-scroll
+          script: python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --select-local-year-1999 --select-local-month-day --probe-native-year-select
 
       - name: Report strict ARM64 realm results and ordinary UI evidence
         if: always()
@@ -228,10 +228,19 @@ jobs:
               raise SystemExit("NOT VERIFIED: no year reopen screenshot")
           print("YEAR OPEN input index:", ui.get("year_scroll_open_input_index"),
                 "matches 1999:", ui.get("year_scroll_open_input_equals_1999"))
-          attempts=probe.get("year_touch_scroll_attempts",[])
-          print("Verified bounded year drags recorded:",len(attempts))
-          print("Any year list ROI pixel changed:",probe.get("year_touch_scroll_any_roi_change"))
-          if not attempts or not all(x.get("screenshot_saved") for x in attempts):
-              raise SystemExit("NOT VERIFIED: touch scroll experiment not completed")
-          print("UI/scroll study only: no year item clicked, DOB unsubmitted, no UTID")
+          if not (probe.get("native_year_item_select_armed") is True and
+                  probe.get("native_year_item_select_after_screenshot_saved") is True
+                  and Path("ci-frida-results/17_native_year_OnSelectItem_after.png").is_file()):
+              raise SystemExit("NOT VERIFIED: native OnSelectItem experiment not armed or screenshot missing")
+          if not (
+                  ui.get("native_year_item_select_attempted") is True
+                  and ui.get("native_year_item_select_returned") is True
+                  and ui.get("native_year_item_select_confirmed") is True
+                  and ui.get("native_year_item_select_failure") is False
+                  and ui.get("year_dropdown_is_selected") is True
+                  and ui.get("year_item_selected_index") == 27
+                  and ui.get("year_item_selection_count", 0) >= 1):
+              raise SystemExit("NOT VERIFIED: original OnSelectItem did not set isSelected and retain 1999")
+          print("VERIFIED: native OnSelectItem(27) and isSelected=true on original year dropdown")
+          print("NO CLAIM: visual year caption confirmed, DOB submitted, registered, or UTID received")
           PY
