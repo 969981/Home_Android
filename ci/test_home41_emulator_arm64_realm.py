@@ -75,6 +75,44 @@ class ARM64RealmContractTests(unittest.TestCase):
         self.assertNotIn("password",repr(result))
         self.assertEqual(result["counts"]["firstboot_birthdata_setdata_entered"],1)
 
+    def test_month_day_indices_and_year_dropdown_state_are_allowlisted(self):
+        raw={
+            "year_dropdown_value_index":27,
+            "year_dropdown_value_equals_1999_option":True,
+            "month_dropdown":{
+                "dropdown_present":True,"option_list_present":True,
+                "option_count":12,"target_index":3,
+                "target_found_uniquely":True,
+                "value_index_equals_target":False,
+                "target_option_text_verified":True,
+                "secret":"DO_NOT_UPLOAD"
+            },
+            "day_dropdown":{
+                "dropdown_present":True,"option_list_present":True,
+                "option_count":31,"target_index":4,
+                "target_found_uniquely":True,
+                "value_index_equals_target":False,
+                "target_option_text_verified":True,
+                "password":"DO_NOT_UPLOAD"
+            },
+            "birth_day_raw":"DO_NOT_UPLOAD"
+        }
+        clean=mod.sanitize_birth_ui(raw)
+        self.assertEqual(clean["year_dropdown_value_index"],27)
+        self.assertTrue(clean["year_dropdown_value_equals_1999_option"])
+        self.assertEqual(clean["month_dropdown"]["target_index"],3)
+        self.assertEqual(clean["day_dropdown"]["target_index"],4)
+        self.assertNotIn("DO_NOT_UPLOAD",repr(clean))
+        self.assertFalse(clean["month_dropdown"]["value_index_equals_target"])
+
+    def test_option_sanitizer_fails_closed_on_untrusted_indices(self):
+        for invalid in (True,"4",34,-4,10000):
+            src={"option_count":12,"target_index":invalid,
+                 "options":["DO_NOT_UPLOAD"]}
+            clean=mod.sanitize_option_status(src,expected_count=12)
+            self.assertIsNone(clean["target_index"])
+            self.assertNotIn("DO_NOT_UPLOAD",repr(clean))
+
     def test_birthdate_ui_invalid_list_size_is_not_reported(self):
         for val in (501, -1, "127", True):
             with self.subTest(val=val):
