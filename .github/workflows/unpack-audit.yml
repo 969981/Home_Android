@@ -38,12 +38,20 @@ jobs:
         run: python tools/native_audit.py --version 4.1.0
       - name: Extract embedded APK media byte-for-byte
         run: python tools/export_raw_assets.py --version 4.1.0
+      - name: Inspect ABA headers without unsupported extraction claims
+        run: python tools/aba_probe.py --version 4.1.0
+      - name: Inspect IL2CPP section ranges and exported function symbols
+        run: python tools/il2cpp_sections.py --version 4.1.0
+      - name: Record absence of any supplied runtime cache
+        run: python tools/cache_diff.py --version 4.1.0
       - name: Install Unity decode dependencies
         run: python -m pip install -r tools/requirements-unity.txt
       - name: Decode supported Unity textures, sprites, texts and meshes
         run: python tools/unity_export.py --version 4.1.0 --max-size-mib 256
       - name: Convert exported OBJ geometry to viewable GLB
         run: python tools/mesh_to_glb.py --version 4.1.0
+      - name: Build material, animation and controller references
+        run: python tools/unity_references.py --version 4.1.0
       - name: Summarize Unity objects with unresolved pixel streams
         run: python tools/unity_failures.py --version 4.1.0
       - name: Build source-linked SQLite inventory
@@ -74,7 +82,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f reports/4.1.0/summary.json reports/4.1.0/scan_summary.json reports/4.1.0/unity_summary.json reports/4.1.0/index_summary.json reports/4.1.0/reassembly_summary.json reports/4.1.0/native_summary.json reports/4.1.0/raw_assets_summary.json reports/4.1.0/unity_failures_summary.json reports/4.1.0/glb_summary.json reports/4.1.0/unity_failures.csv reports/4.1.0/raw_assets.csv reports/4.1.0/apk.sha256 reports/4.1.0/apk_entries.csv
+          git add -f reports/4.1.0/summary.json reports/4.1.0/scan_summary.json reports/4.1.0/unity_summary.json reports/4.1.0/index_summary.json reports/4.1.0/reassembly_summary.json reports/4.1.0/native_summary.json reports/4.1.0/raw_assets_summary.json reports/4.1.0/unity_failures_summary.json reports/4.1.0/glb_summary.json reports/4.1.0/unity_failures.csv reports/4.1.0/raw_assets.csv reports/4.1.0/aba_headers.csv reports/4.1.0/aba_summary.json reports/4.1.0/il2cpp_sections.csv reports/4.1.0/il2cpp_sections_summary.json reports/4.1.0/il2cpp_dynamic_symbols.csv reports/4.1.0/unity_references_summary.json reports/4.1.0/runtime_cache_diff.json reports/4.1.0/apk.sha256 reports/4.1.0/apk_entries.csv
           if git diff --cached --quiet; then
             echo "No metadata changes"
           else

@@ -58,3 +58,13 @@ python tools/index_db.py --version 4.1.0
 - Native：3 DEX、9 AArch64 ELF；IL2CPP metadata 魔数 `0xFAB11BAF` / version 31 已验证；还未执行完整 JADX/Cpp2IL/Ghidra 分析。
 
 可重复生成的摘要与来源清单已提交到 [reports/4.1.0](reports/4.1.0)。图片、模型、音频等转换文件存放于 Actions `home-4.1.0-converted-resources`（保留 7 天），不默认公开提交大量商业素材。
+
+## M9 新一轮证据扫描
+
+在真实 APK 成功完成前面的全量 Unity 资源遍历后，运行：
+`python tools/aba_probe.py --version 4.1.0`、
+`python tools/il2cpp_sections.py --version 4.1.0`、
+`python tools/unity_references.py --version 4.1.0` 和
+`python tools/cache_diff.py --version 4.1.0`。
+
+输出 ABA 未知格式头部报告、Material/AnimationClip PPtr 依赖关系、IL2CPP 区段及 ELF 动态函数符号数和明确的“缺少运行时缓存输入”报告。实际 Android 素材会由私有仓库 `969981/PokeHome_Resources` 的独立 Actions 流水线提交到 `4.1.0/Unpack/Android/4.1.0/`。
