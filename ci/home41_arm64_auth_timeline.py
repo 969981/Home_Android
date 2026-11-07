@@ -52,6 +52,9 @@ EVENT_NAMES = frozenset({
     "firstboot_birthdata_year_change_entered",
     "firstboot_birthdata_month_change_entered",
     "firstboot_birthdata_day_change_entered",
+    "year_1999_local_setter_armed",
+    "year_1999_local_setter_returned",
+    "year_1999_local_setter_failed",
 })
 CATEGORICAL_REASON = frozenset({
     "not_native_arm64", "rva_outside_module", "module_watcher_failed"
@@ -101,7 +104,9 @@ def sanitize_timeline_event(message: object) -> dict | None:
         clean["observer"] = source["observer"]
     if source.get("reason") in CATEGORICAL_REASON:
         clean["reason"] = source["reason"]
-    for key in ("raw_birthdate_values_redacted", "field_offsets_static_only",
+    for key in ("original_dropdown_index_verified", "birthday_submission_attempted",
+                "original_setter_called", "year1999_controller_field_verified",
+                "raw_birthdate_values_redacted", "field_offsets_static_only",
                 "raw_year_value_redacted", "raw_month_value_redacted",
                 "raw_day_value_redacted",
                 "from_common_basic_consumer", "candidate_matches_target",
