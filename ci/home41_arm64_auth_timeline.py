@@ -1,0 +1,334 @@
+#!/usr/bin/env python3
+"""Observe Pokémon HOME 4.1.0 native ARM64 auth/request/response time line.
+
+Run on a computer connected to a personally controlled Android arm64-v8a
+device with a compatible Frida server. This observes the ORIGINAL client.
+
+No Nintendo Account linking, network modification, signup/delete API calls,
+automatic consent, account creation, request replay or token/ID logging.
+The optional --show-local-values prints only on an interactive local terminal.
+CI can test this implementation but CANNOT claim live server-response proof.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import threading
+from pathlib import Path
+
+# Reuse the strict installed APK SHA + native architecture guards.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import home41_arm64_readonly_runner as core
+
+KIND = "home41_arm64_auth_timeline"
+EXPECTED_VERSION = "4.1.0"
+EVENT_NAMES = frozenset({
+    "native_preflight_failed",
+    "hook_attach_failed",
+    "arm64_auth_observer_ready",
+    "arm64_auth_observer_partial",
+    "registration_request_serializer_entered",
+    "registration_lng_cntry_packed_write_seen",
+    "registration_packed_fields_invalid",
+    "registration_packed_fields_unreadable",
+    "registration_response_handler_entered",
+    "token_request_serializer_entered",
+    "token_response_handler_entered",
+    "login_request_serializer_entered",
+    "login_response_handler_entered",
+    "common_response_handler_entered",
+    "setbasic_unverified_caller",
+    "basic_caller_unreadable",
+    "basic_missing_numeric_utid",
+    "basic_read_failed",
+    "first_basic_utid_observed",
+})
+CATEGORICAL_REASON = frozenset({
+    "not_native_arm64", "rva_outside_module", "module_watcher_failed"
+})
+OBSERVER_NAMES = frozenset({
+    "register_serialize", "register_packed_write", "register_callback",
+    "token_serialize", "token_callback", "login_serialize",
+    "login_callback", "common_response", "set_basic"
+})
+TIMELINE_FIELDS = frozenset({
+    "event", "elapsed_ms", "index", "observer", "reason",
+    "from_common_basic_consumer", "candidate_matches_target",
+    "source_endpoint_verified", "display_id_semantics_verified",
+    "values_redacted", "fields_readable", "hook_failures",
+    "actual_http_request_send_verified",
+})
+STATUS_VALUES = frozenset({
+    "native_arm64_only", "runtime_not_tested",
+    "native_arm64_preflight_failed", "frida_unavailable",
+    "frida_spawn_or_attach_failed", "arm64_hooks_partial",
+    "runtime_script_error", "no_auth_events_observed",
+    "auth_events_without_basic", "basic_received_from_common_consumer",
+    "observer_ready_waited_without_basic",
+})
+
+
+def sanitize_timeline_event(message: object) -> dict | None:
+    """Strictly whitelist reported values, never native script error text."""
+    if not isinstance(message, dict) or message.get("type") != "send":
+        return None
+    source = message.get("payload")
+    if not isinstance(source, dict) or source.get("kind") != KIND:
+        return None
+    if source.get("version") != EXPECTED_VERSION or source.get("event") not in EVENT_NAMES:
+        return None
+    clean = {"event": source["event"]}
+    ms = source.get("elapsed_ms")
+    if type(ms) is int and 0 <= ms < 86400000:
+        clean["elapsed_ms"] = ms
+    index = source.get("index")
+    if type(index) is int and 1 <= index <= 16:
+        clean["index"] = index
+    if source.get("observer") in OBSERVER_NAMES:
+        clean["observer"] = source["observer"]
+    if source.get("reason") in CATEGORICAL_REASON:
+        clean["reason"] = source["reason"]
+    for key in ("from_common_basic_consumer", "candidate_matches_target",
+                "source_endpoint_verified", "display_id_semantics_verified",
+                "values_redacted", "fields_readable",
+                "actual_http_request_send_verified"):
+        if type(source.get(key)) is bool:
+            clean[key] = source[key]
+    failures = source.get("hook_failures")
+    if type(failures) is int and 0 <= failures <= 16:
+        clean["hook_failures"] = failures
+    # Explicitly DO NOT copy raw UTID, lng, cntry, UUID, cookie, URL, JSON etc.
+    return clean
+
+
+def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
+    """Produce a conservative sanitized timeline and causality warnings."""
+    order = [x.get("event") for x in events]
+    first_basic = next((x for x in events if x.get("event") ==
+                        "first_basic_utid_observed"), None)
+    register_request = "registration_request_serializer_entered" in order
+    register_fields = "registration_lng_cntry_packed_write_seen" in order
+    register_callback = "registration_response_handler_entered" in order
+    token_callback = "token_response_handler_entered" in order
+    login_callback = "login_response_handler_entered" in order
+    login_request = "login_request_serializer_entered" in order
+
+    status = ("runtime_script_error" if error == "runtime_script_error"
+              else "native_arm64_preflight_failed" if any(
+                  e in order for e in ("native_preflight_failed",))
+              else "arm64_hooks_partial" if "arm64_auth_observer_partial" in order
+              else "basic_received_from_common_consumer" if first_basic and
+                   ready and first_basic.get("from_common_basic_consumer") is True
+              else "observer_ready_waited_without_basic" if ready
+              else "no_auth_events_observed" if not events
+              else "auth_events_without_basic")
+    times = {}
+    for event in (
+        "registration_request_serializer_entered",
+        "registration_lng_cntry_packed_write_seen",
+        "registration_response_handler_entered",
+        "token_request_serializer_entered",
+        "token_response_handler_entered",
+        "login_request_serializer_entered",
+        "login_response_handler_entered",
+        "common_response_handler_entered",
+        "first_basic_utid_observed",
+    ):
+        sample = next((x for x in events if x.get("event") == event and
+                       "elapsed_ms" in x), None)
+        times[event] = sample["elapsed_ms"] if sample else None
+    delta = None
+    if times["first_basic_utid_observed"] is not None and \
+            times["registration_response_handler_entered"] is not None:
+        delta = (times["first_basic_utid_observed"] -
+                 times["registration_response_handler_entered"])
+    return {
+        "status": status,
+        "real_android_capture_proven_by_this_report_alone": False,
+        "source_apk_must_be_sha_verified": True,
+        "events_observed": len(events),
+        "first_event_ms": times,
+        "first_basic_minus_registration_callback_ms": delta,
+        "auth": {
+            "registration_serializer_entered": register_request,
+            "register_lng_cntry_packed_write_observed": register_fields,
+            "register_response_handler_entered": register_callback,
+            "token_response_handler_entered": token_callback,
+            "login_serializer_entered": login_request,
+            "login_response_handler_entered": login_callback,
+            "first_basic_utid_observed": first_basic is not None,
+            "first_basic_caller_verified": bool(first_basic and
+                first_basic.get("from_common_basic_consumer") is True),
+            "candidate_matches_target": (
+                first_basic.get("candidate_matches_target")
+                if first_basic else None),
+        },
+        # These are always false until additional independent evidence exists.
+        "http_request_transmitted_verified": False,
+        "http_response_source_endpoint_verified": False,
+        "lng_cntry_enum_ui_mapping_verified": False,
+        "six_digit_id_equals_starter_ot_verified": False,
+        "nintendo_account_binding_attempted_by_runner": False,
+        "account_registration_attempted_by_runner": False,
+        "account_deletion_attempted_by_runner": False,
+        "secrets_included": False,
+        "timeline": events[:200],
+    }
+
+
+def local_values(values: object, *, interactive: bool) -> bool:
+    """Print local RPC values only with explicit interactive consent."""
+    if (not interactive or os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+            or not isinstance(values, dict)):
+        return False
+    if values.get("from_common_basic_caller") is not True and \
+       values.get("request_packed_values_seen") is not True:
+        return False
+    if values.get("request_packed_values_seen") is True:
+        lang, country = values.get("lng_candidate"), values.get("cntry_candidate")
+        if (type(lang) is int and type(country) is int and
+                0 <= lang <= 10000 and 0 <= country <= 10000):
+            print("[LOCAL ONLY] register request DTO lng integer:", lang, flush=True)
+            print("[LOCAL ONLY] register request DTO cntry integer:", country, flush=True)
+            print("[UNVERIFIED] DTO enum numbers; HTTP transmission and country UI mapping not proven.")
+    if values.get("first_basic_seen") is True and values.get("from_common_basic_caller") is True:
+        raw = values.get("raw_utid")
+        candidate = values.get("six_digit_candidate")
+        if (isinstance(raw, str) and re.fullmatch(r"[0-9]{1,10}", raw)
+                and int(raw) <= 0xffffffff
+                and isinstance(candidate, str)
+                and re.fullmatch(r"[0-9]{6}", candidate)
+                and str(int(raw) % 1000000).zfill(6) == candidate):
+            print("[LOCAL ONLY] server basic.utid:", raw, flush=True)
+            print("[LOCAL ONLY] derived six-digit candidate:", candidate, flush=True)
+            print("[UNVERIFIED] Candidate TID7 is not proven equal to starter Pokémon OT.")
+    return True
+
+
+def run(apk: Path, script_path: Path, serial: str | None,
+        timeout: int, output: Path | None, show_local_values: bool) -> int:
+    verified = core.preflight(apk, serial)
+    if verified.get("result") != "native_arm64_original_apk_preflight_ok":
+        print(json.dumps({"status": "native_arm64_preflight_failed",
+                          "preflight_result": verified.get("result")}, sort_keys=True))
+        return 2
+    installed = core.installed_apk_integrity(serial)
+    if installed != "installed_apk_hash_verified":
+        print(json.dumps({"status": "native_arm64_preflight_failed",
+                          "installed_apk_integrity": installed}, sort_keys=True))
+        return 2
+    if show_local_values and (not sys.stdout.isatty() or
+                              os.environ.get("GITHUB_ACTIONS", "").lower() == "true"):
+        print('{"status":"local_values_require_interactive_terminal"}')
+        return 2
+
+    script_source = script_path.read_text(encoding="utf-8")
+    try:
+        import frida
+        device = (frida.get_device(serial, timeout=12) if serial
+                  else frida.get_usb_device(timeout=12))
+    except Exception as err:
+        print(json.dumps({"status": "frida_unavailable",
+                          "error_type": type(err).__name__}))
+        return 2
+
+    events: list[dict] = []
+    got_first_basic = threading.Event()
+    stop_early = threading.Event()
+    ready = False
+    script_error = None
+    pid = None
+    resumed = False
+    session = None
+    script = None
+
+    def on_message(message, _data):
+        nonlocal ready, script_error
+        if isinstance(message, dict) and message.get("type") == "error":
+            script_error = "runtime_script_error"
+            stop_early.set()
+            return
+        item = sanitize_timeline_event(message)
+        if item is None:
+            return
+        events.append(item)
+        if item["event"] == "arm64_auth_observer_ready":
+            ready = True
+        elif item["event"] in ("arm64_auth_observer_partial", "native_preflight_failed"):
+            stop_early.set()
+        elif item["event"] == "first_basic_utid_observed":
+            got_first_basic.set()
+        if item["event"] in ("arm64_auth_observer_ready",
+                             "registration_lng_cntry_packed_write_seen",
+                             "first_basic_utid_observed"):
+            print(json.dumps(item, ensure_ascii=False, sort_keys=True), flush=True)
+
+    try:
+        pid = device.spawn([core.PACKAGE])
+        session = device.attach(pid)
+        script = session.create_script(script_source)
+        script.on("message", on_message)
+        script.load()
+        device.resume(pid)
+        resumed = True
+        # Poll, so an incomplete or failed hook never passes as an ID read.
+        stop_early.wait(timeout=min(max(1, timeout), 3600)
+                        if not got_first_basic.is_set() else 0)
+        # The first UTID may be received while waiting; it is never printed in
+        # the public event stream. Explicit local RPC optionally displays it.
+        if show_local_values and script is not None and ready:
+            try:
+                local_values(script.exports_sync.localvalues(),
+                             interactive=sys.stdout.isatty())
+            except Exception:
+                pass
+    except Exception as err:
+        script_error = type(err).__name__
+    finally:
+        if pid is not None and not resumed:
+            try:
+                device.resume(pid)
+            except Exception:
+                pass
+        if session:
+            try:
+                session.detach()
+            except Exception:
+                pass
+
+    report = analyze_events(events, ready, script_error)
+    report["execution_context"] = "runtime_device_direct"  # not CI or fixture
+    report["frida_exception_type"] = script_error if script_error in {
+        "runtime_script_error", "TransportError", "ServerNotRunningError",
+        "InvalidOperationError", "TimedOutError"} else (
+        "other_failure" if script_error else None)
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True)
+                          + "\n", encoding="utf-8")
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    return (0 if report["status"] == "basic_received_from_common_consumer"
+            else 3)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apk", required=True, type=Path)
+    parser.add_argument("--script", type=Path,
+                        default=Path(__file__).with_name("home41_arm64_auth_timeline.js"))
+    parser.add_argument("--serial")
+    parser.add_argument("--timeout", type=int, default=900)
+    parser.add_argument("--output", type=Path,
+                        help="Optional sanitized summary, never raw IDs or request contents")
+    parser.add_argument("--show-local-values", action="store_true",
+                        help="Explicit opt-in: display DTO integers and UTID on a local TTY only")
+    args = parser.parse_args()
+    return run(args.apk, args.script, args.serial, args.timeout,
+               args.output, args.show_local_values)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
