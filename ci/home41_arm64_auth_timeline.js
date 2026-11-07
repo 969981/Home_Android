@@ -78,6 +78,10 @@ let optInYearSetArmed = false;
 let localYearSetAttempted = false;
 let localYearSetterReturned = false;
 let localYearSetterFailure = false;
+let optInMonthSetArmed = false, optInDaySetArmed = false;
+let localMonthSetAttempted = false, localDaySetAttempted = false;
+let localMonthSetterReturned = false, localDaySetterReturned = false;
+let localMonthSetterFailure = false, localDaySetterFailure = false;
 
 function readShortOptionLabel(optionPtr) {
   // Only tiny decimal month/day labels from the game's own OptionData.
@@ -171,7 +175,9 @@ function readBirthdateUIState() {
     inputed_year_in_supported_range: false,
     inputed_year_equals_1999: false,
     inputed_month_in_range: false,
+    inputed_month_equals_4: false,
     inputed_day_in_range: false,
+    inputed_day_equals_5: false,
     exact_birthdate_selected: false
   };
   if (birthViewPtr === null) return empty;
@@ -223,7 +229,9 @@ function readBirthdateUIState() {
       inputed_year_in_supported_range: year >= 1900 && year <= 2100,
       inputed_year_equals_1999: year === 1999,
       inputed_month_in_range: month >= 1 && month <= 12,
+      inputed_month_equals_4: month === 4,
       inputed_day_in_range: day >= 1 && day <= 31,
+      inputed_day_equals_5: day === 5,
       exact_birthdate_selected: year === 1999 && month === 4 && day === 5
     };
   } catch (_) {
@@ -257,7 +265,13 @@ rpc.exports = {
         year_setter_opted_in: optInYearSetArmed,
         year_setter_attempted: localYearSetAttempted,
         year_setter_returned: localYearSetterReturned,
-        year_setter_failure: localYearSetterFailure
+        year_setter_failure: localYearSetterFailure,
+        month_setter_attempted: localMonthSetAttempted,
+        month_setter_returned: localMonthSetterReturned,
+        month_setter_failure: localMonthSetterFailure,
+        day_setter_attempted: localDaySetAttempted,
+        day_setter_returned: localDaySetterReturned,
+        day_setter_failure: localDaySetterFailure
       },
       counts: {...counts}
     };
@@ -274,6 +288,44 @@ rpc.exports = {
         ui.inputed_year_in_supported_range || ui.exact_birthdate_selected) return false;
     optInYearSetArmed = true;
     emit('year_1999_local_setter_armed', {
+      original_dropdown_index_verified: true,
+      birthday_submission_attempted: false
+    });
+    return true;
+  },
+  armlocalmonth4() {
+    if (!hooksReady || Process.arch !== 'arm64' ||
+        optInMonthSetArmed || localMonthSetAttempted) return false;
+    const ui = readBirthdateUIState();
+    if (!ui.inputed_year_equals_1999 ||
+        !ui.year_dropdown_value_equals_1999_option ||
+        !ui.month_dropdown.target_found_uniquely ||
+        !ui.month_dropdown.target_option_text_verified ||
+        ui.month_dropdown.option_count !== 12 ||
+        ui.month_dropdown.target_index !== 3 ||
+        ui.inputed_month_in_range || ui.inputed_day_in_range) return false;
+    optInMonthSetArmed = true;
+    emit('month_4_local_setter_armed', {
+      original_dropdown_index_verified: true,
+      birthday_submission_attempted: false
+    });
+    return true;
+  },
+  armlocalday5() {
+    if (!hooksReady || Process.arch !== 'arm64' ||
+        optInDaySetArmed || localDaySetAttempted) return false;
+    const ui = readBirthdateUIState();
+    if (!ui.inputed_year_equals_1999 ||
+        !ui.year_dropdown_value_equals_1999_option ||
+        !ui.inputed_month_equals_4 ||
+        !ui.month_dropdown.value_index_equals_target ||
+        !ui.day_dropdown.target_found_uniquely ||
+        !ui.day_dropdown.target_option_text_verified ||
+        ui.day_dropdown.option_count !== 31 ||
+        ui.day_dropdown.target_index !== 4 ||
+        ui.inputed_day_in_range) return false;
+    optInDaySetArmed = true;
+    emit('day_5_local_setter_armed', {
       original_dropdown_index_verified: true,
       birthday_submission_attempted: false
     });
@@ -423,43 +475,82 @@ function install(lib) {
   // invoking Unity setters from Frida's RPC worker thread.
   const originalSetValue = new NativeFunction(
     ptr(RVA.customDropdownSetValue), 'void', ['pointer', 'int']);
-  hook('birthyear_dropdown_show', RVA.customDropdownShow, {
+  hook('birthdate_dropdown_show', RVA.customDropdownShow, {
     onEnter(args) {
       this.yearTarget = null;
-      if (!optInYearSetArmed || localYearSetAttempted ||
-          birthViewPtr === null) return;
+      this.monthTarget = null;
+      this.dayTarget = null;
+      if (birthViewPtr === null) return;
       try {
-        const yearDropdown = birthViewPtr.add(0x28).readPointer();
         const ui = readBirthdateUIState();
-        if (!yearDropdown.isNull() && args[0].equals(yearDropdown) &&
+        const yearDropdown = birthViewPtr.add(0x28).readPointer();
+        const monthDropdown = birthViewPtr.add(0x30).readPointer();
+        const dayDropdown = birthViewPtr.add(0x38).readPointer();
+        if (optInYearSetArmed && !localYearSetAttempted &&
+            !yearDropdown.isNull() && args[0].equals(yearDropdown) &&
             ui.year_option_count === 127 && ui.year_1999_index === 27 &&
             ui.first_option_is_2026 && !ui.inputed_year_in_supported_range) {
           localYearSetAttempted = true;
           this.yearTarget = yearDropdown;
+        } else if (optInMonthSetArmed && !localMonthSetAttempted &&
+            !monthDropdown.isNull() && args[0].equals(monthDropdown) &&
+            ui.inputed_year_equals_1999 &&
+            ui.year_dropdown_value_equals_1999_option &&
+            ui.month_dropdown.target_found_uniquely &&
+            ui.month_dropdown.target_index === 3 &&
+            ui.month_dropdown.option_count === 12 &&
+            !ui.inputed_month_in_range) {
+          localMonthSetAttempted = true;
+          this.monthTarget = monthDropdown;
+        } else if (optInDaySetArmed && !localDaySetAttempted &&
+            !dayDropdown.isNull() && args[0].equals(dayDropdown) &&
+            ui.inputed_year_equals_1999 &&
+            ui.inputed_month_equals_4 &&
+            ui.month_dropdown.value_index_equals_target &&
+            ui.day_dropdown.target_found_uniquely &&
+            ui.day_dropdown.target_index === 4 &&
+            ui.day_dropdown.option_count === 31 &&
+            !ui.inputed_day_in_range) {
+          localDaySetAttempted = true;
+          this.dayTarget = dayDropdown;
         }
       } catch (_) {
-        localYearSetterFailure = true;
+        localYearSetterFailure = localYearSetterFailure || optInYearSetArmed;
+        localMonthSetterFailure = localMonthSetterFailure || optInMonthSetArmed;
+        localDaySetterFailure = localDaySetterFailure || optInDaySetArmed;
       }
     },
     onLeave() {
-      if (this.yearTarget === null) return;
-      optInYearSetArmed = false;
-      try {
-        // Original game's own dropdown setter sends the normal value-change
-        // callback, which performs year parsing and local display updates.
-        originalSetValue(this.yearTarget, 27);
-        localYearSetterReturned = true;
-        const check = readBirthdateUIState();
-        emit('year_1999_local_setter_returned', {
-          original_setter_called: true,
-          year1999_controller_field_verified: check.inputed_year_equals_1999,
-          birthday_submission_attempted: false
-        });
-      } catch (_) {
-        localYearSetterFailure = true;
-        emit('year_1999_local_setter_failed', {
-          birthday_submission_attempted: false
-        });
+      for (const item of [
+        {target: this.yearTarget, index: 27, field: 'inputed_year_equals_1999', label: 'year_1999'},
+        {target: this.monthTarget, index: 3, field: 'inputed_month_equals_4', label: 'month_4'},
+        {target: this.dayTarget, index: 4, field: 'inputed_day_equals_5', label: 'day_5'}
+      ]) {
+        if (item.target === null) continue;
+        if (item.label === 'year_1999') optInYearSetArmed = false;
+        if (item.label === 'month_4') optInMonthSetArmed = false;
+        if (item.label === 'day_5') optInDaySetArmed = false;
+        try {
+          // Native UI callback on the game's Unity thread, not the RPC thread.
+          originalSetValue(item.target, item.index);
+          const ui = readBirthdateUIState();
+          const selected = ui[item.field] === true;
+          if (item.label === 'year_1999') localYearSetterReturned = selected;
+          if (item.label === 'month_4') localMonthSetterReturned = selected;
+          if (item.label === 'day_5') localDaySetterReturned = selected;
+          emit(item.label + '_local_setter_returned', {
+            original_setter_called: true,
+            controller_field_verified: selected,
+            birthday_submission_attempted: false
+          });
+        } catch (_) {
+          if (item.label === 'year_1999') localYearSetterFailure = true;
+          if (item.label === 'month_4') localMonthSetterFailure = true;
+          if (item.label === 'day_5') localDaySetterFailure = true;
+          emit(item.label + '_local_setter_failed', {
+            birthday_submission_attempted: false
+          });
+        }
       }
     }
   });
