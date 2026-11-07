@@ -119,6 +119,11 @@ jobs:
                   for key in ('native_arm64','native_module_ready','hooks_ready',
                               'first_basic_seen','serialized_lng_cntry_seen'):
                       f.write(f'- ARM64 {key}: \`{snap.get(key,"unavailable")}\`\\n')
+                  birth=snap.get('birthdate_ui',{})
+                  for key in ('controller_seen','year_dropdown_present',
+                              'year_option_list_present','year_option_count',
+                              'inputed_year_equals_1999','exact_birthdate_selected'):
+                      f.write(f'- Birthdate UI {key}: \`{birth.get(key,"unavailable")}\`\\n')
                   net=monitor.get('network',{})
                   f.write(f'- Network hooks: connect=`{net.get("connect_hook","unknown")}`, '
                           f'getaddrinfo=`{net.get("resolver_hook","unknown")}`\n')
