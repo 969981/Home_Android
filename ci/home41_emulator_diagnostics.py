@@ -367,7 +367,8 @@ def run(apk: Path, out: Path, settle: int = 25,
         probe_year_dpad: bool = False,
         select_local_year_1999: bool = False,
         select_local_month_day: bool = False,
-        probe_year_touch_scroll: bool = False) -> dict:
+        probe_year_touch_scroll: bool = False,
+        probe_native_year_select: bool = False) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     report = {
         "version": "4.1.0", "device": "disposable_github_actions_avd",
@@ -403,7 +404,10 @@ def run(apk: Path, out: Path, settle: int = 25,
             "year_reopen_screenshot_saved": False,
             "year_touch_scroll_requested": probe_year_touch_scroll,
             "year_touch_scroll_attempts": [],
-            "year_touch_scroll_any_roi_change": False
+            "year_touch_scroll_any_roi_change": False,
+            "native_year_item_select_requested": probe_native_year_select,
+            "native_year_item_select_armed": False,
+            "native_year_item_select_after_screenshot_saved": False
         },
         "account_delete_attempted": False,
         "first_basic_utid_status": "not_observed",
@@ -588,13 +592,26 @@ def run(apk: Path, out: Path, settle: int = 25,
                                             "16b_year_before_reopen.png")
                                         if year_again and match_known_ui(
                                                 year_again,"birthday_year_dropdown"):
-                                            mm["year_reopened_after_full_internal_dob"] = click_if_known(
-                                                year_again,"birthday_year_dropdown")
+                                            if probe_native_year_select:
+                                                mm["native_year_item_select_armed"] = bool(
+                                                    hasattr(observer, "arm_native_year_item_select")
+                                                    and observer.arm_native_year_item_select())
+                                            if (not probe_native_year_select or
+                                                    mm["native_year_item_select_armed"]):
+                                                mm["year_reopened_after_full_internal_dob"] = click_if_known(
+                                                    year_again,"birthday_year_dropdown")
                                         if mm["year_reopened_after_full_internal_dob"]:
                                             time.sleep(3)
                                             reopened=screenshot(
                                                 out,"17_year_reopened_index27.png")
                                             mm["year_reopen_screenshot_saved"] = bool(reopened)
+                                            if probe_native_year_select:
+                                                # This screenshot follows a real original
+                                                # OnSelectItem(27) if the ARM64 hook fired.
+                                                # It may show the menu already closed.
+                                                mm["native_year_item_select_after_screenshot_saved"] = bool(
+                                                    screenshot(out,
+                                                        "17_native_year_OnSelectItem_after.png"))
                                             if (probe_year_touch_scroll and reopened and
                                                     match_known_ui(reopened,"year_popup_open")):
                                                 # Native Unity EnhancedScroller only:
