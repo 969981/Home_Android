@@ -170,6 +170,84 @@ class AuthTimelineTests(unittest.TestCase):
             module.local_values(details,interactive=True)
         self.assertEqual(out.getvalue(),"")
 
+    def test_emulated_guest_preflight_uses_verified_apk_bridge_and_version(self):
+        with tempfile.TemporaryDirectory() as root:
+            apk=Path(root)/"original.apk"
+            apk.write_bytes(b"synthetic")
+            with patch.object(module.core, "digest",
+                              return_value=module.core.APK_SHA256), \
+                 patch.object(module.core, "android_prop", side_effect=[
+                     "x86_64","libndk_translation.so"
+                 ]), \
+                 patch.object(module.core, "adb",
+                              return_value=SimpleNamespace(
+                                  returncode=0,
+                                  stdout="versionCode=81 minSdk=23")):
+                actual=module.preflight_for_realm(apk,None,"emulated")
+            self.assertEqual(actual["result"],
+                             "emulated_arm64_guest_preflight_ok")
+            self.assertFalse(actual["guest_arm64_agent_and_hooks_verified"])
+
+    def test_emulated_guest_without_native_bridge_is_rejected(self):
+        with tempfile.TemporaryDirectory() as root:
+            apk=Path(root)/"original.apk"
+            apk.write_bytes(b"synthetic")
+            with patch.object(module.core, "digest",
+                              return_value=module.core.APK_SHA256), \
+                 patch.object(module.core, "android_prop", side_effect=[
+                     "x86_64",""
+                 ]), \
+                 patch.object(module.core,"adb",
+                              side_effect=AssertionError("no APK info needed")):
+                actual=module.preflight_for_realm(apk,None,"emulated")
+            self.assertEqual(actual["result"],
+                             "native_bridge_arm_emulation_not_configured")
+
+    def test_emulated_realm_attaches_existing_home_without_spawn(self):
+        class Agent:
+            def __init__(self): self.callback=None
+            def on(self,name,fn): self.callback=fn
+            def load(self):
+                self.callback(transport("arm64_auth_observer_ready", 10),None)
+                self.callback(transport("first_basic_utid_observed", 22,
+                   from_common_basic_consumer=True),None)
+        class Session:
+            def __init__(self): self.agent=Agent(); self.detached=False
+            def create_script(self,src):return self.agent
+            def detach(self): self.detached=True
+        class Device:
+            def __init__(self):self.sess=Session();self.realm=None
+            def attach(self,pid,realm):
+                self.realm=realm
+                assert pid==5678
+                return self.sess
+            def spawn(self,*args):
+                raise AssertionError("emulated realm must not spawn")
+        device=Device()
+        frida=SimpleNamespace(get_usb_device=lambda timeout:device)
+        with tempfile.TemporaryDirectory() as root:
+            js=Path(root)/"agent.js"
+            js.write_text("// offline mock",encoding="utf-8")
+            report=Path(root)/"clean.json"
+            with patch.object(module,"preflight_for_realm",return_value={
+                      "result":"emulated_arm64_guest_preflight_ok",
+                      "primary_abi":"x86_64"}), \
+                 patch.object(module.core,"installed_apk_integrity",
+                              return_value="installed_apk_hash_verified"), \
+                 patch.object(module.core,"adb",return_value=SimpleNamespace(
+                     returncode=0,stdout="5678\n")), \
+                 patch.dict(sys.modules,{"frida":frida}), \
+                 redirect_stdout(io.StringIO()):
+                outcome=module.run(Path("unused.apk"),js,None,2,report,False,
+                                   realm="emulated")
+            self.assertEqual(outcome,0)
+            self.assertTrue(device.sess.detached)
+            self.assertEqual(device.realm,"emulated")
+            report_data=json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(report_data["frida_realm"],"emulated")
+            self.assertTrue(report_data["arm64_agent_hooks_armed"])
+            self.assertFalse(report_data["six_digit_id_equals_starter_ot_verified"])
+
     def test_native_script_contains_expected_anchors_but_no_http_replay(self):
         js=(CI/"home41_arm64_auth_timeline.js").read_text(encoding="utf-8")
         self.assertIn("0x1D334A4",js)
