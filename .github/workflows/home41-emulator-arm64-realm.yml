@@ -189,7 +189,7 @@ jobs:
                   and ui.get("year_setter_returned") is True
                   and ui.get("year_setter_failure") is False
                   and ui.get("inputed_year_equals_1999") is True
-                  and ui.get("exact_birthdate_selected") is False
+                  and ui.get("exact_birthdate_selected") is True
                   and r.get("birthday_submitted") is False
                   and r.get("registration_status")=="not_attempted"):
               raise SystemExit("NOT VERIFIED: native year setter did not prove local 1999 without DOB submission")
