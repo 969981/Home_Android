@@ -101,6 +101,31 @@ def preflight(apk: Path, serial: str | None = None) -> dict:
     return report
 
 
+
+def installed_apk_integrity(serial: str | None = None) -> str:
+    """Check the Android-installed base.apk SHA before touching process memory.
+
+    Returns only a categorical result. Android system app paths are never
+    printed, and a missing permission is not treated as a matching build.
+    """
+    listing = adb(["shell", "pm", "path", PACKAGE], serial)
+    if not listing or listing.returncode != 0:
+        return "installed_apk_path_unavailable"
+    locations = [line.removeprefix("package:").strip()
+                 for line in (listing.stdout or "").splitlines()
+                 if line.startswith("package:")]
+    base = next((p for p in locations if p.endswith("/base.apk")), None)
+    if not base:
+        return "installed_base_apk_missing"
+    checked = adb(["shell", "sha256sum", base], serial, timeout=50)
+    if not checked or checked.returncode != 0:
+        return "installed_apk_hash_unavailable"
+    match = re.match(r"^([0-9a-fA-F]{64})\\s", (checked.stdout or ""))
+    if not match:
+        return "installed_apk_hash_unavailable"
+    return "installed_apk_hash_verified" if match.group(1).lower() == APK_SHA256 else "installed_apk_hash_mismatch"
+
+
 def prepare_script(path: Path, target_tid: str) -> str:
     if not re.fullmatch(r"[0-9]{6}", target_tid):
         raise ValueError("Target must be exactly six ASCII digits")
@@ -139,6 +164,11 @@ def observe(apk: Path, target_tid: str, serial: str | None,
     check = preflight(apk, serial)
     print_report(check)
     if check["result"] != "native_arm64_original_apk_preflight_ok":
+        return 2
+    installed_integrity = installed_apk_integrity(serial)
+    print_report({"installed_apk_integrity": installed_integrity})
+    if installed_integrity != "installed_apk_hash_verified":
+        print_report({"result": "instrumentation_blocked_installed_apk_not_verified"})
         return 2
     source = prepare_script(script_path, target_tid)
     try:
