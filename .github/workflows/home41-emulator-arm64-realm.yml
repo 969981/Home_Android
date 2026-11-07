@@ -208,7 +208,7 @@ jobs:
               month.get("option_count")==12 and month.get("target_index")==3
               and month.get("target_found_uniquely") is True
               and month.get("value_index_equals_target") is True
-              and day.get("option_count")==31 and day.get("target_index")==4
+              and day.get("option_count")==30 and day.get("target_index")==4
               and day.get("target_found_uniquely") is True
               and day.get("value_index_equals_target") is True
               and ui.get("inputed_month_equals_4") is True
