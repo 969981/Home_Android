@@ -89,7 +89,7 @@ jobs:
           heap-size: 512M
           disable-animations: true
           emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
-          script: python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year
+          script: python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --probe-year-dpad
 
       - name: Report strict ARM64 realm results and ordinary UI evidence
         if: always()
@@ -168,4 +168,9 @@ jobs:
           if not (Path("ci-frida-results/08_birthdate_year_picker_open.png").is_file()):
               raise SystemExit("NOT VERIFIED: missing actual year-picker screenshot")
           print("VERIFIED: one controlled year selector tap and its screenshot; no birthday submitted")
+          if r.get("year_keyboard_probe_sent") is not True or not Path(
+                  "ci-frida-results/09_year_after_single_dpad_down.png").is_file():
+              raise SystemExit("NOT VERIFIED: one safe keyboard navigation key and screenshot")
+          print("VERIFIED: sent one DPAD_DOWN on known year popup and captured next frame")
+          print("NO CLAIM: target year 1999 selected or any birthdate submitted")
           PY
