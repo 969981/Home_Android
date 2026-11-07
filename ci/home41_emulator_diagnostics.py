@@ -138,9 +138,16 @@ def match_known_ui(data: bytes, stage: str):
                 all(near(at(.3, y), (248, 250, 245), 12)
                     for y in (.24, .30, .36, .42, .48, .54, .60))):
             return (int(w * .82), int(h * .48))
+    elif stage == "china_mainland":
+        # Match the real screenshot from Actions #42357608036 exactly.
+        # Never tap unknown dropdowns or a subsequent Terms/birthday page.
+        if (near(at(.5, .02), (202, 244, 161), 12) and
+                near(at(.5, .14), (38, 179, 151), 12) and
+                near(at(.5, .24), (248, 250, 245), 12) and
+                near(at(.2, .54), (18, 166, 168), 12) and
+                near(at(.2, .57), (18, 166, 168), 12)):
+            return (int(w * .5), int(h * .54))
     return None
-
-
 
 
 def predeny_disposable_avd_permissions() -> dict:
@@ -311,7 +318,8 @@ def redacted_system_diagnostics() -> dict:
             "raw_log_saved": False}
 
 
-def run(apk: Path, out: Path, settle: int = 25) -> dict:
+def run(apk: Path, out: Path, settle: int = 25,
+        observer=None, select_china_mainland: bool = False) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     report = {
         "version": "4.1.0", "device": "disposable_github_actions_avd",
@@ -319,6 +327,8 @@ def run(apk: Path, out: Path, settle: int = 25) -> dict:
         "registration_status": "not_attempted",
         "terms_accepted": False,
         "country_selected": False,
+        "network_response_body_captured": False,
+        "ui_settings_are_backend_response": False,
         "birthday_entered": False,
         "account_delete_attempted": False,
         "first_basic_utid_status": "not_observed",
@@ -358,6 +368,8 @@ def run(apk: Path, out: Path, settle: int = 25) -> dict:
                        "-c", "android.intent.category.LAUNCHER", "1", timeout=50)
         report["launch_event_sent"] = bool(launched and launched.returncode == 0
                                           and "Events injected: 1" in (launched.stdout or ""))
+        if observer is not None and report["launch_event_sent"]:
+            report["stage_monitor_initial"] = observer.start()
         time.sleep(18)
         report["os_overlay_actions"] = dismiss_known_os_overlays()
         initial = screenshot(out, "01_initial.png")
@@ -376,6 +388,8 @@ def run(apk: Path, out: Path, settle: int = 25) -> dict:
                 if report["language_clicked"]:
                     break
         if report["language_clicked"]:
+            if observer is not None:
+                observer.mark("language_selected")
             time.sleep(8)
             confirm = screenshot(out, "02_after_language.png")
             report["language_confirmation_clicked"] = click_if_known(
@@ -388,12 +402,25 @@ def run(apk: Path, out: Path, settle: int = 25) -> dict:
         else:
             report["language_confirmation_clicked"] = False
         if report["language_confirmation_clicked"]:
+            if observer is not None:
+                observer.mark("language_confirmed")
             time.sleep(18)
             region = screenshot(out, "03_after_confirmation.png")
             report["region_dropdown_expanded"] = click_if_known(
                 region, "region_dropdown")
         else:
             report["region_dropdown_expanded"] = False
+        if report["region_dropdown_expanded"] and observer is not None:
+            observer.mark("region_expanded")
+            if select_china_mainland:
+                time.sleep(4)
+                menu = screenshot(out, "04_region_expanded.png")
+                report["country_selected"] = click_if_known(menu, "china_mainland")
+                if report["country_selected"]:
+                    observer.mark("country_selected")
+                    time.sleep(8)
+                    report["country_selection_screenshot_saved"] = bool(
+                        screenshot(out, "05_country_selected.png"))
         time.sleep(settle)
         report["final_screenshot_saved"] = bool(
             screenshot(out, "04_final.png"))
@@ -416,6 +443,15 @@ def run(apk: Path, out: Path, settle: int = 25) -> dict:
         report["error_type"] = type(e).__name__
         # Do not publish exception content that may expose paths or credentials.
     finally:
+        if observer is not None:
+            try:
+                report["stage_monitor"] = observer.finish()
+            except Exception as e:
+                report["stage_monitor"] = {
+                    "status": "observer_teardown_failed",
+                    "error_type": type(e).__name__,
+                    "http_body_intercepted": False,
+                }
         (out / "home41_emulator_report.json").write_text(
             json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8")
