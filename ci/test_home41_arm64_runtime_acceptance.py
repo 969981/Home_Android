@@ -55,6 +55,7 @@ class FakeDevice:
         self.sessions=[]
         self.resume_count=0
         self.spawn_count=0
+        self.caller_verified=True
     def spawn(self,package):
         assert package==[mod.core.PACKAGE]
         self.current_id=self.ids[self.spawn_count]
