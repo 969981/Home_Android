@@ -123,6 +123,56 @@ class ARM64RealmContractTests(unittest.TestCase):
             self.assertIsNone(mod.sanitize_birth_ui(
                 {"year_1999_index":val})["year_1999_index"])
 
+    def test_native_onselect_item_is_inert_without_opt_in(self):
+        monitor=mod.ARM64RealmStageMonitor(
+            Path("unused"),Path("unused"),Path("unused"))
+        monitor.arm64_realm_status="emulated_realm_attached"
+        monitor.arm64_agent=SimpleNamespace(exports_sync=SimpleNamespace(
+            armnativeyearitemselect=lambda: (_ for _ in ()).throw(
+                AssertionError("native OnSelectItem MUST require explicit opt-in"))))
+        self.assertFalse(monitor.arm_native_year_item_select())
+        self.assertEqual(monitor.native_year_select_arm_result,"not_eligible")
+
+    def test_native_year_select_can_only_be_armed_by_explicit_mode(self):
+        calls=[]
+        monitor=mod.ARM64RealmStageMonitor(
+            Path("unused"),Path("unused"),Path("unused"),
+            probe_native_year_select=True)
+        monitor.arm64_realm_status="emulated_realm_attached"
+        monitor.arm64_agent=SimpleNamespace(exports_sync=SimpleNamespace(
+            armnativeyearitemselect=lambda: calls.append("original_select") or True))
+        self.assertTrue(monitor.arm_native_year_item_select())
+        self.assertEqual(calls,["original_select"])
+        self.assertEqual(monitor.native_year_select_arm_result,
+                         "guarded_native_onselect_armed")
+
+    def test_native_ui_selection_snapshot_does_not_leak_private_data(self):
+        raw={
+            "year_dropdown_is_selected":True,
+            "month_dropdown_is_selected":False,
+            "day_dropdown_is_selected":False,
+            "native_year_item_select_attempted":True,
+            "native_year_item_select_returned":True,
+            "native_year_item_select_confirmed":True,
+            "year_item_selection_count":1,
+            "year_item_selected_index":27,
+            "raw_utid":"NO_REAL_PRIVATE_VALUE",
+            "caption_text":"PERSONAL_INFO_MUST_NOT_LEAK",
+        }
+        clean=mod.sanitize_birth_ui(raw)
+        self.assertTrue(clean["year_dropdown_is_selected"])
+        self.assertEqual(clean["year_item_selected_index"],27)
+        self.assertEqual(clean["year_item_selection_count"],1)
+        self.assertNotIn("NO_REAL_PRIVATE_VALUE",repr(clean))
+        self.assertNotIn("PERSONAL_INFO",repr(clean))
+
+    def test_native_year_selection_uses_original_onselectitem_after_show(self):
+        agent=(CI/"home41_arm64_auth_timeline.js").read_text(encoding="utf-8")
+        self.assertIn("customDropdownOnSelectItem: 0x1F15084",agent)
+        self.assertIn("originalOnSelectItem(this.nativeYearItemSelectTarget, 27)",agent)
+        self.assertIn("nativeYearItemSelectConfirmed",agent)
+        self.assertNotIn("Memory.write",agent)
+
     def test_local_year_setter_is_inert_without_explicit_optin(self):
         monitor=mod.ARM64RealmStageMonitor(
             Path("unused"),Path("unused"),Path("unused"))
