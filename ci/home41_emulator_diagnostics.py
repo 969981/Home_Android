@@ -138,6 +138,16 @@ def match_known_ui(data: bytes, stage: str):
                 all(near(at(.3, y), (248, 250, 245), 12)
                     for y in (.24, .30, .36, .42, .48, .54, .60))):
             return (int(w * .82), int(h * .48))
+    elif stage == "birthday_year_dropdown":
+        # Real ARM64-emulated AVD screenshot #42378951870, exact original
+        # "确认年龄" empty YYYY/MM/DD UI. Open year only; never submit birthday.
+        if (near(at(.5, .14), (38, 179, 151), 12) and
+                near(at(.5, .24), (198, 242, 161), 14) and
+                near(at(.2, .29), (248, 250, 245), 12) and
+                near(at(.8, .29), (248, 250, 245), 12) and
+                near(at(.4, .34), (240, 30, 30), 18) and
+                near(at(.7, .95), (255, 173, 4), 15)):
+            return (int(w * .285), int(h * .287))
     elif stage == "country_confirmation":
         # Real Actions #42373066707 screenshot after tapping China mainland:
         # a confirmation modal with orange YES at normalized (.71, .635).
@@ -331,7 +341,8 @@ def redacted_system_diagnostics() -> dict:
 
 
 def run(apk: Path, out: Path, settle: int = 25,
-        observer=None, select_china_mainland: bool = False) -> dict:
+        observer=None, select_china_mainland: bool = False,
+        probe_birthday_year: bool = False) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     report = {
         "version": "4.1.0", "device": "disposable_github_actions_avd",
@@ -345,6 +356,9 @@ def run(apk: Path, out: Path, settle: int = 25,
         "network_response_body_captured": False,
         "ui_settings_are_backend_response": False,
         "birthday_entered": False,
+        "birthday_year_dropdown_tapped": False,
+        "birthday_year_picker_screenshot_saved": False,
+        "birthday_submitted": False,
         "account_delete_attempted": False,
         "first_basic_utid_status": "not_observed",
         "trainer_id_semantic_match": "not_tested",
@@ -443,6 +457,15 @@ def run(apk: Path, out: Path, settle: int = 25,
                         time.sleep(8)
                         report["country_selection_screenshot_saved"] = bool(
                             screenshot(out, "06_after_country_confirmation.png"))
+        if probe_birthday_year and report["country_confirmation_clicked"]:
+            # One deliberate local control tap; no date value or next button.
+            birthday = screenshot(out, "07_birthdate_before_year_picker.png")
+            report["birthday_year_dropdown_tapped"] = click_if_known(
+                birthday, "birthday_year_dropdown")
+            if report["birthday_year_dropdown_tapped"]:
+                time.sleep(3)
+                report["birthday_year_picker_screenshot_saved"] = bool(
+                    screenshot(out, "08_birthdate_year_picker_open.png"))
         time.sleep(settle)
         report["final_screenshot_saved"] = bool(
             screenshot(out, "04_final.png"))
