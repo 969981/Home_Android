@@ -328,6 +328,31 @@ class ARM64RealmStageMonitor(StageMonitor):
             self.native_day_select_arm_result="frida_rpc_error_"+type(err).__name__
             return False
 
+    def verify_full_visible_birthdate_native(self) -> bool:
+        """Only a yes/no check. No ID, DOB raw strings or tokens exported."""
+        if (self.arm64_realm_status != "emulated_realm_attached" or
+                not self.arm64_agent):
+            return False
+        try:
+            snapshot=sanitized_arm64_snapshot(
+                self.arm64_agent.exports_sync.snapshot())
+            ui=snapshot.get("birthdate_ui",{})
+            return bool(
+                snapshot.get("native_arm64") is True and
+                snapshot.get("hooks_ready") is True and
+                ui.get("exact_birthdate_selected") is True and
+                ui.get("inputed_year_equals_1999") is True and
+                ui.get("inputed_month_equals_4") is True and
+                ui.get("inputed_day_equals_5") is True and
+                ui.get("year_dropdown_is_selected") is True and
+                ui.get("month_dropdown_is_selected") is True and
+                ui.get("day_dropdown_is_selected") is True and
+                ui.get("native_year_item_select_confirmed") is True and
+                ui.get("native_month_item_select_confirmed") is True and
+                ui.get("native_day_item_select_confirmed") is True)
+        except Exception:
+            return False
+
     def arm_local_month_4(self) -> bool:
         if (not self.select_month_day or not self.arm64_agent or
                 self.arm64_realm_status != "emulated_realm_attached"):
@@ -404,6 +429,8 @@ def main() -> int:
                         help="OPT IN: one original Unity dropdown setter call; no date submission")
     parser.add_argument("--select-local-month-day", action="store_true",
                         help="OPT IN: original Unity month/day setters after verified 1999; no form submission")
+    parser.add_argument("--advance-birthday-once", action="store_true",
+                        help="Opt in: after native/UI full-date verification, tap only age form Next once; no Terms consent")
     parser.add_argument("--probe-native-full-date-select", action="store_true",
                         help="Opt in: original OnSelectItem for 1999, April, May 5, never submit")
     parser.add_argument("--probe-native-year-select", action="store_true",
@@ -421,7 +448,8 @@ def main() -> int:
         select_month_day=args.select_local_month_day,
         probe_native_year_select=(
             args.probe_native_year_select or args.probe_native_full_date_select),
-        probe_native_full_date_select=args.probe_native_full_date_select)
+        probe_native_full_date_select=args.probe_native_full_date_select,
+        advance_birthday_once=args.advance_birthday_once)
     report = diag.run(
         args.apk, args.output, settle=max(3,min(60,args.settle_seconds)),
         observer=observer, select_china_mainland=True,
@@ -445,7 +473,10 @@ def main() -> int:
         "birthday_year_dropdown_tapped": report.get("birthday_year_dropdown_tapped"),
         "birthday_year_picker_screenshot_saved":
             report.get("birthday_year_picker_screenshot_saved"),
-        "birthday_submitted": False,
+        "birthday_submitted": report.get("birthday_submitted"),
+        "birthday_next_tapped": report.get("birthday_next_tapped"),
+        "post_next_screen_changed": report.get("post_next_screen_changed"),
+        "post_next_screen_raw_saved": False,
         "year_keyboard_probe_sent": report.get("year_keyboard_probe_sent"),
         "year_popup_verifiable_after_keyboard":
             report.get("year_popup_verifiable_after_keyboard"),
