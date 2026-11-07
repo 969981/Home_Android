@@ -1,0 +1,161 @@
+name: HOME 4.1.0 Android AVD Frida ARM64 emulated-realm proof
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/home41-emulator-arm64-realm.yml'
+      - 'ci/home41_emulator_arm64_realm.py'
+      - 'ci/test_home41_emulator_arm64_realm.py'
+      - 'ci/home41_arm64_auth_timeline.js'
+      - 'ci/home41_arm64_auth_timeline.py'
+      - 'ci/home41_emulator_diagnostics.py'
+      - 'ci/home41_emulator_stage_frida.py'
+      - 'ci/home41_emulator_network_meta.js'
+      - 'ci/test_home41_emulator_stage_frida.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: home41-emulated-arm64-realm
+  cancel-in-progress: false
+
+jobs:
+  live-emulator:
+    name: Prove Frida ARM64 emulated realm on actual HOME Android x86_64 AVD
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prepare verified original APK and test observer constraints
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q pillow 'frida==17.26.1'
+          python -m py_compile ci/home41_emulator_diagnostics.py ci/home41_emulator_stage_frida.py ci/home41_emulator_arm64_realm.py ci/home41_arm64_auth_timeline.py
+          python -m unittest discover -s ci -p 'test_home41_emulator_diagnostics.py' -v
+          python -m unittest discover -s ci -p 'test_home41_emulator_stage_frida.py' -v
+          python -m unittest discover -s ci -p 'test_home41_emulator_arm64_realm.py' -v
+          node --check ci/home41_emulator_network_meta.js
+          node --check ci/home41_arm64_auth_timeline.js
+          APK="$(find ROMS/4.1.0 -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          test "$(sha256sum "$APK" | cut -d' ' -f1)" = "8dee598028cd70441f645c8fff96b093b76778d625cdf07c60109eced50ffac1"
+          echo "HOME41_APK=$APK" >> "$GITHUB_ENV"
+          mkdir -p ci-frida-results
+
+      - name: Obtain matching official Frida 17.26.1 Android x86_64 server
+        shell: bash
+        run: |
+          set -euo pipefail
+          FRIDA_VERSION="$(python -c 'import frida; print(frida.__version__)')"
+          test "$FRIDA_VERSION" = "17.26.1"
+          curl -fLsS --retry 3 --connect-timeout 15 --max-time 150 \
+            "https://github.com/frida/frida/releases/download/${FRIDA_VERSION}/frida-server-${FRIDA_VERSION}-android-x86_64.xz" \
+            -o /tmp/home41_frida_server.xz
+          xz -dc /tmp/home41_frida_server.xz > /tmp/home41_frida_server
+          chmod 700 /tmp/home41_frida_server
+          test -s /tmp/home41_frida_server
+          echo "HOME41_FRIDA_SERVER=/tmp/home41_frida_server" >> "$GITHUB_ENV"
+          echo "Frida host/server version: ${FRIDA_VERSION}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enable KVM on Ubuntu hosted runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -e /dev/kvm
+
+      - name: Boot original HOME 4.1.0 and observe language/region with Frida
+        id: emulator
+        continue-on-error: true
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          ram-size: 4096M
+          heap-size: 512M
+          disable-animations: true
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 16
+
+      - name: Report strict ARM64 realm results and ordinary UI evidence
+        if: always()
+        env:
+          EMULATOR_OUTCOME: ${{ steps.emulator.outcome }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          source=Path('ci-frida-results/home41_emulator_report.json')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as f:
+              f.write('\n## Real Android Frida ARM64 emulated-realm experiment\n\n')
+              f.write('- Emulator action outcome: '+os.environ['EMULATOR_OUTCOME']+'\n')
+              if source.is_file():
+                  r=json.loads(source.read_text(encoding='utf-8'))
+                  for k in ('result','language_clicked','language_confirmation_clicked',
+                            'region_dropdown_expanded','country_selected',
+                            'registration_status','first_basic_utid_status'):
+                      f.write(f'- {k}: `{r.get(k, "unavailable")}`\n')
+                  monitor=r.get('stage_monitor',{})
+                  f.write(f'- Frida x86_64 status: `{monitor.get("status","no_attempt")}`\n')
+                  arm=monitor.get('arm64_emulated_realm',{})
+                  f.write(f'- ARM64 emulated realm attach: \`{arm.get("status","not_attempted")}\`\\n')
+                  f.write(f'- ARM64 emulated realm error type: \`{arm.get("error_type","none")}\`\\n')
+                  snap=arm.get('snapshot',{})
+                  for key in ('native_arm64','native_module_ready','hooks_ready',
+                              'first_basic_seen','serialized_lng_cntry_seen'):
+                      f.write(f'- ARM64 {key}: \`{snap.get(key,"unavailable")}\`\\n')
+                  net=monitor.get('network',{})
+                  f.write(f'- Network hooks: connect=`{net.get("connect_hook","unknown")}`, '
+                          f'getaddrinfo=`{net.get("resolver_hook","unknown")}`\n')
+                  for stage,counts in net.get('counts',{}).items():
+                      f.write(f'- {stage}: connects=`{counts.get("connect")}`, '
+                              f'resolver=`{counts.get("resolver")}`\n')
+              else:
+                  f.write('- Probe did not create a report.\n')
+              f.write('\nThis experiment MAY attach ARM64 IL2CPP hooks only after the emulated realm has been verified. No HTTP paths/bodies or ID values. '
+                      'No ARM64 SetBasic hook, Terms, birthday, registration, UTID, or account token collected.\n')
+          PY
+
+      - name: Upload sanitized emulator screenshots and metadata report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: home41-arm64-emulated-realm-proof
+          path: ci-frida-results/
+          retention-days: 3
+          if-no-files-found: warn
+
+      - name: Fail if ARM64 emulated realm and real IL2CPP hooks were not proven
+        shell: bash
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("ci-frida-results/home41_emulator_report.json")
+          if not p.is_file():
+              raise SystemExit("No live Android report produced")
+          r=json.loads(p.read_text(encoding="utf-8"))
+          arm=r.get("stage_monitor",{}).get("arm64_emulated_realm",{})
+          snap=arm.get("snapshot",{})
+          if not (r.get("process_at_end") is True
+                  and arm.get("status")=="emulated_realm_attached"
+                  and snap.get("native_arm64") is True
+                  and snap.get("native_module_ready") is True
+                  and snap.get("hooks_ready") is True):
+              raise SystemExit("NOT VERIFIED: ARM64 emulated realm or IL2CPP hooks; see sanitized artifact")
+          print("VERIFIED: emulated ARM64 realm + original libil2cpp native method hooks were installed")
+          print("NO CLAIM: authentication, response payload, registration or basic.utid captured")
+          PY
