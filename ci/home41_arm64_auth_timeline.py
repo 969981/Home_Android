@@ -54,6 +54,9 @@ EVENT_NAMES = frozenset({
     "firstboot_birthdata_day_change_entered",
     "firstboot_year_scroll_open_entered",
     "firstboot_year_item_selection_entered",
+    "year_native_item_select_armed",
+    "year_native_item_select_returned",
+    "year_native_item_select_failed",
     "year_scroll_open_unreadable",
     "year_item_selection_unreadable",
     "year_1999_local_setter_armed",
@@ -79,6 +82,8 @@ TIMELINE_FIELDS = frozenset({
     "actual_http_request_send_verified",
     "year_target_index_27_requested",
     "year_target_index_27_selected",
+    "actual_native_ui_method_called",
+    "original_is_selected_verified",
 })
 STATUS_VALUES = frozenset({
     "native_arm64_only", "runtime_not_tested",
@@ -120,7 +125,9 @@ def sanitize_timeline_event(message: object) -> dict | None:
                 "values_redacted", "fields_readable",
                 "actual_http_request_send_verified",
                 "year_target_index_27_requested",
-                "year_target_index_27_selected"):
+                "year_target_index_27_selected",
+                "actual_native_ui_method_called",
+                "original_is_selected_verified"):
         if type(source.get(key)) is bool:
             clean[key] = source[key]
     failures = source.get("hook_failures")
