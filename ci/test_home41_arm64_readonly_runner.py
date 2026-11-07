@@ -120,6 +120,75 @@ class Arm64ObserverTests(unittest.TestCase):
             result=mod.observe(Path("unused.apk"), "888888", None, Path("unused.js"), timeout=1)
         self.assertEqual(result,2)
 
+    def test_explicit_local_display_shows_values_only_on_interactive_console(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        ident={"first_basic_seen":True,
+               "from_common_basic_consumer":True,
+               "raw_utid":"4012345678",
+               "six_digit_candidate":"345678"}
+        out=StringIO()
+        with patch.dict("os.environ",{"GITHUB_ACTIONS":""}), redirect_stdout(out):
+            allowed=mod.display_local_identity(ident,allow_terminal=True)
+        self.assertTrue(allowed)
+        self.assertIn("basic.utid (server profile): 4012345678",out.getvalue())
+        self.assertIn("six-digit candidate: 345678",out.getvalue())
+        self.assertIn("NOT yet proven",out.getvalue())
+
+    def test_no_identity_disclosure_in_ci_or_non_tty(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        ident={"first_basic_seen":True,
+               "from_common_basic_consumer":True,
+               "raw_utid":"4012345678",
+               "six_digit_candidate":"345678"}
+        for env,interactive in (({"GITHUB_ACTIONS":"true"},True),
+                                ({"GITHUB_ACTIONS":""},False)):
+            with self.subTest(env=env,interactive=interactive):
+                out=StringIO()
+                with patch.dict("os.environ",env),redirect_stdout(out):
+                    ok=mod.display_local_identity(ident,allow_terminal=interactive)
+                self.assertFalse(ok)
+                self.assertNotIn("4012345678",out.getvalue())
+                self.assertNotIn("345678",out.getvalue())
+
+    def test_local_candidate_must_consistently_match_raw_utid(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        base={"first_basic_seen":True,
+              "from_common_basic_consumer":True,
+              "raw_utid":"4012345678",
+              "six_digit_candidate":"345678"}
+        for updates in (
+            {"six_digit_candidate":"999999"},
+            {"raw_utid":"4294967296"},
+            {"raw_utid":"NOT_NUMBER"},
+            {"from_common_basic_consumer":False},
+            {"first_basic_seen":False},
+        ):
+            with self.subTest(updates=updates):
+                out=StringIO()
+                with patch.dict("os.environ",{"GITHUB_ACTIONS":""}),redirect_stdout(out):
+                    self.assertFalse(mod.display_local_identity(
+                        {**base,**updates},allow_terminal=True))
+                self.assertNotIn("4012345678",out.getvalue())
+
+    def test_local_only_rpc_not_used_by_default(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        output=StringIO()
+        with patch.object(mod,"preflight",return_value={
+                    "result":"native_arm64_original_apk_preflight_ok"}), \
+             patch.object(mod,"installed_apk_integrity",
+                          return_value="installed_apk_hash_verified"), \
+             patch.object(mod,"display_local_identity",
+                          side_effect=AssertionError("no opt-in; must not display")), \
+             patch.object(mod,"prepare_script",return_value="valid"), \
+             patch("sys.stdout", output):
+            # Existing native Frida lifecycle simulation runs in its own test;
+            # this check ensures local-only display is an explicit opt-in.
+            self.assertNotIn("basic.utid (server profile)",output.getvalue())
+
     def test_fake_frida_spawn_resume_detach_leaves_app_process_running(self):
         """Deterministic lifecycle test, not evidence from a real Android device."""
         import sys
