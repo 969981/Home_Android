@@ -1,0 +1,40 @@
+name: HOME 4.1.0 ARM64 SetBasic / UI / cold-start acceptance fixtures
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/home41-arm64-runtime-acceptance-tests.yml'
+      - 'ci/home41_arm64_runtime_acceptance.py'
+      - 'ci/test_home41_arm64_runtime_acceptance.py'
+      - 'ci/home41_arm64_readonly_runner.py'
+      - 'ci/home41_utid_readonly_arm64.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  strict-offline-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate original-client acceptance source syntax
+        run: |
+          set -euo pipefail
+          node --check ci/home41_utid_readonly_arm64.js
+          python -m py_compile ci/home41_arm64_runtime_acceptance.py ci/home41_arm64_readonly_runner.py
+      - name: Run strict two-phase mocked lifecycle and privacy regression tests
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s ci -p 'test_home41_arm64_runtime_acceptance.py' -v
+          python -m unittest discover -s ci -p 'test_home41_arm64_readonly_runner.py' -v
+      - name: Keep real hardware validation separate from CI fixture success
+        if: always()
+        run: |
+          echo 'This CI runs NO ARM64 Android guest, NO live HOME server requests, NO real ID hook, NO account registration or deletion.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Runtime acceptance requires actual native ARM64 Android + official HOME UI confirmation after a cold restart.' >> "$GITHUB_STEP_SUMMARY"
