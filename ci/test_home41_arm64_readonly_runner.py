@@ -98,24 +98,24 @@ class Arm64ObserverTests(unittest.TestCase):
 
     def test_installed_apk_hash_check_agrees_with_original(self):
         results = [
-            SimpleNamespace(returncode=0, stdout="package:/data/app/temporary/base.apk\\n"),
+            SimpleNamespace(returncode=0, stdout="package:/data/app/temporary/base.apk\n"),
             SimpleNamespace(returncode=0,
-                            stdout=mod.APK_SHA256+"  /data/app/temporary/base.apk\\n"),
+                            stdout=mod.APK_SHA256+"  /data/app/temporary/base.apk\n"),
         ]
         with patch.object(mod, "adb", side_effect=results):
             self.assertEqual(mod.installed_apk_integrity(), "installed_apk_hash_verified")
 
     def test_installed_apk_hash_mismatch_blocks_observation(self):
         results = [
-            SimpleNamespace(returncode=0, stdout="package:/data/app/temporary/base.apk\\n"),
+            SimpleNamespace(returncode=0, stdout="package:/data/app/temporary/base.apk\n"),
             SimpleNamespace(returncode=0,
-                            stdout="0"*64+"  /data/app/temporary/base.apk\\n"),
+                            stdout="0"*64+"  /data/app/temporary/base.apk\n"),
         ]
         with patch.object(mod, "adb", side_effect=results):
             self.assertEqual(mod.installed_apk_integrity(), "installed_apk_hash_mismatch")
         with patch.object(mod, "preflight", return_value={
-            "result":"native_arm64_original_apk_preflight_ok"}), \\
-             patch.object(mod, "installed_apk_integrity",return_value="installed_apk_hash_mismatch"), \\
+            "result":"native_arm64_original_apk_preflight_ok"}), \
+             patch.object(mod, "installed_apk_integrity",return_value="installed_apk_hash_mismatch"), \
              patch.object(mod,"prepare_script",side_effect=AssertionError("Do not inject")):
             result=mod.observe(Path("unused.apk"), "888888", None, Path("unused.js"), timeout=1)
         self.assertEqual(result,2)
@@ -169,10 +169,10 @@ class Arm64ObserverTests(unittest.TestCase):
         frida=SimpleNamespace(get_usb_device=lambda timeout:device)
         output=StringIO()
         with patch.object(mod,"preflight",return_value={
-                 "result":"native_arm64_original_apk_preflight_ok"}), \\
+                 "result":"native_arm64_original_apk_preflight_ok"}), \
              patch.object(mod,"installed_apk_integrity",
-                          return_value="installed_apk_hash_verified"), \\
-             patch.object(mod,"prepare_script",return_value="fake frida script"), \\
+                          return_value="installed_apk_hash_verified"), \
+             patch.object(mod,"prepare_script",return_value="fake frida script"), \
              patch.dict(sys.modules,{"frida":frida}), redirect_stdout(output):
             code=mod.observe(Path("unused.apk"),"888888",None,
                              Path("unused.js"),timeout=1)
