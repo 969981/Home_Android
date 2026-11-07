@@ -444,9 +444,11 @@ def run(apk: Path, out: Path, settle: int = 25,
             "native_full_date_requested": probe_native_full_date_select,
             "year_caption_roi_changed": False,
             "native_month_item_select_armed": False,
+            "native_month_item_select_tapped": False,
             "native_month_item_select_screenshot_saved": False,
             "month_caption_roi_changed": False,
             "native_day_item_select_armed": False,
+            "native_day_item_select_tapped": False,
             "native_day_item_select_screenshot_saved": False,
             "day_caption_roi_changed": False
         },
@@ -669,9 +671,9 @@ def run(apk: Path, out: Path, settle: int = 25,
                                                             hasattr(observer,"arm_native_month_item_select")
                                                             and observer.arm_native_month_item_select())
                                                     if mm["native_month_item_select_armed"]:
-                                                        mm["month_popup_tapped"] = click_if_known(
+                                                        mm["native_month_item_select_tapped"] = click_if_known(
                                                             month_before,"birthday_month_dropdown")
-                                                    if mm["month_popup_tapped"]:
+                                                    if mm["native_month_item_select_tapped"]:
                                                         time.sleep(2)
                                                         month_after=screenshot(out,
                                                             "19_native_month_OnSelectItem_after.png")
@@ -688,9 +690,9 @@ def run(apk: Path, out: Path, settle: int = 25,
                                                                     hasattr(observer,"arm_native_day_item_select")
                                                                     and observer.arm_native_day_item_select())
                                                             if mm["native_day_item_select_armed"]:
-                                                                mm["day_popup_tapped"] = click_if_known(
+                                                                mm["native_day_item_select_tapped"] = click_if_known(
                                                                     day_before,"birthday_day_dropdown")
-                                                            if mm["day_popup_tapped"]:
+                                                            if mm["native_day_item_select_tapped"]:
                                                                 time.sleep(2)
                                                                 day_after=screenshot(out,
                                                                     "20_native_day_OnSelectItem_after.png")
