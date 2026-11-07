@@ -36,7 +36,29 @@ _ALLOWED_AGENT_EVENTS = frozenset({
     "login_response_handler_entered",
     "common_response_handler_entered",
     "first_basic_utid_observed",
+    "firstboot_birthdata_setdata_entered",
+    "firstboot_birthdata_year_change_entered",
+    "firstboot_birthdata_month_change_entered",
+    "firstboot_birthdata_day_change_entered",
 })
+
+
+def sanitize_birth_ui(raw: object) -> dict:
+    """Whitelist only derived, non-secret birthdate UI probe categories."""
+    fields = (
+        "controller_seen", "year_dropdown_present",
+        "year_option_list_present", "inputed_year_in_supported_range",
+        "inputed_year_equals_1999", "inputed_month_in_range",
+        "inputed_day_in_range", "exact_birthdate_selected",
+    )
+    src=raw if isinstance(raw,dict) else {}
+    n=src.get("year_option_count")
+    return {
+        **{key:src.get(key) is True for key in fields},
+        "year_option_count": n if type(n) is int and 0<=n<=500 else None,
+        # Never export raw birth date, pointer, list elements or account data.
+        "raw_birthdate_logged": False,
+    }
 
 
 def sanitized_arm64_snapshot(raw: object) -> dict:
@@ -60,6 +82,7 @@ def sanitized_arm64_snapshot(raw: object) -> dict:
         "serialized_lng_cntry_seen":
             raw.get("serialized_lng_cntry_seen") is True,
         "counts": cleaned_counts,
+        "birthdate_ui": sanitize_birth_ui(raw.get("birthdate_ui")),
         "utid_raw_or_candidate_logged": False,
         "backend_endpoint_identified": False,
         "registered_account": False,
@@ -187,6 +210,7 @@ def main() -> int:
         "native_arm64_agent": snapshot.get("native_arm64"),
         "native_arm64_module": snapshot.get("native_module_ready"),
         "arm64_il2cpp_hooks_ready": snapshot.get("hooks_ready"),
+        "birthdate_ui": snapshot.get("birthdate_ui"),
         "first_basic_utid_observed": snapshot.get("first_basic_seen"),
         "account_registration": "not_attempted",
     }, sort_keys=True))
