@@ -1,0 +1,114 @@
+{
+  "by_kind": {
+    "android_dex": 3,
+    "android_resource_candidate": 38,
+    "audio_candidate": 36,
+    "il2cpp_metadata_candidate": 1,
+    "image_png": 66,
+    "native_elf": 9,
+    "text_or_data_candidate": 3,
+    "unity_serialized_candidate": 3,
+    "unknown": 1651
+  },
+  "il2cpp_binary_present": true,
+  "il2cpp_metadata_present": true,
+  "il2cpp_ready_for_analysis": true,
+  "largest_files": [
+    {
+      "bytes": 75365728,
+      "path": "lib/arm64-v8a/libil2cpp.so"
+    },
+    {
+      "bytes": 20969760,
+      "path": "lib/arm64-v8a/libunity.so"
+    },
+    {
+      "bytes": 12978072,
+      "path": "assets/bin/Data/Managed/Metadata/global-metadata.dat"
+    },
+    {
+      "bytes": 10656360,
+      "path": "assets/bin/Data/00000000000000000000000000000000"
+    },
+    {
+      "bytes": 8183736,
+      "path": "classes.dex"
+    },
+    {
+      "bytes": 6820996,
+      "path": "classes3.dex"
+    },
+    {
+      "bytes": 4270944,
+      "path": "lib/arm64-v8a/libFirebaseCppApp-12_10_0.so"
+    },
+    {
+      "bytes": 4201448,
+      "path": "assets/bin/Data/90cfe71a6ca410442afd810884b5032a"
+    },
+    {
+      "bytes": 3743028,
+      "path": "assets/bin/Data/Resources/unity default resources"
+    },
+    {
+      "bytes": 3540148,
+      "path": "assets/bin/Data/globalgamemanagers"
+    },
+    {
+      "bytes": 3277592,
+      "path": "assets/bin/Data/a3ddb1cf96fb1804bb4140a24eaa1c15"
+    },
+    {
+      "bytes": 2796492,
+      "path": "assets/bin/Data/8205316133318d5468af3d32d585068e"
+    },
+    {
+      "bytes": 2796492,
+      "path": "assets/bin/Data/bc1d008da29107741844e8a2eb7f6ded"
+    },
+    {
+      "bytes": 2796492,
+      "path": "assets/bin/Data/c3790d60e5e56f34eb0546ed750aed79"
+    },
+    {
+      "bytes": 2796492,
+      "path": "assets/bin/Data/dfe13af62b4713e4aa98e5aaa1c96d10"
+    },
+    {
+      "bytes": 2796488,
+      "path": "assets/bin/Data/274c6412e4ee36b499cc69d37c34154b"
+    },
+    {
+      "bytes": 2796488,
+      "path": "assets/bin/Data/7c874afb56585f241ae3af7617b11271"
+    },
+    {
+      "bytes": 2796488,
+      "path": "assets/bin/Data/eaad0a42b3bac3840b1a89555350feaa"
+    },
+    {
+      "bytes": 1661916,
+      "path": "assets/bin/Data/cf76a9811bc7a8f4eace34fb25608a79"
+    },
+    {
+      "bytes": 1623924,
+      "path": "assets/bin/Data/73f6825f0242c1d43bebf64834a95273"
+    }
+  ],
+  "native_libraries": [
+    "libFirebaseCppAnalytics.so",
+    "libFirebaseCppApp-12_10_0.so",
+    "libFirebaseCppMessaging.so",
+    "lib_burst_generated.so",
+    "libil2cpp.so",
+    "libmain.so",
+    "libms.so",
+    "libsigner.so",
+    "libunity.so"
+  ],
+  "scanned_files": 1810,
+  "unity_candidates": 3,
+  "unity_possible": true,
+  "unity_runtime_present": true,
+  "version": "4.1.0"
+}
