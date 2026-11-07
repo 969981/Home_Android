@@ -159,6 +159,16 @@ def match_known_ui(data: bytes, stage: str):
                 near(at(.4, .34), (240, 30, 30), 18) and
                 near(at(.7, .95), (255, 173, 4), 15)):
             return (int(w * .285), int(h * .287))
+    elif stage in ("birthday_month_dropdown", "birthday_day_dropdown"):
+        # Shared exact AGE form signature; never click NEXT or Terms.
+        if (near(at(.5, .14), (38, 179, 151), 12) and
+                near(at(.5, .24), (198, 242, 161), 14) and
+                near(at(.2, .29), (248, 250, 245), 12) and
+                near(at(.8, .29), (248, 250, 245), 12) and
+                near(at(.4, .34), (240, 30, 30), 18) and
+                near(at(.7, .95), (255, 173, 4), 15)):
+            x = .59 if stage == "birthday_month_dropdown" else .88
+            return (int(w * x), int(h * .287))
     elif stage == "country_confirmation":
         # Real Actions #42373066707 screenshot after tapping China mainland:
         # a confirmation modal with orange YES at normalized (.71, .635).
@@ -355,7 +365,8 @@ def run(apk: Path, out: Path, settle: int = 25,
         observer=None, select_china_mainland: bool = False,
         probe_birthday_year: bool = False,
         probe_year_dpad: bool = False,
-        select_local_year_1999: bool = False) -> dict:
+        select_local_year_1999: bool = False,
+        select_local_month_day: bool = False) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     report = {
         "version": "4.1.0", "device": "disposable_github_actions_avd",
@@ -377,6 +388,17 @@ def run(apk: Path, out: Path, settle: int = 25,
         "year1999_local_setter_arm_requested": False,
         "year1999_local_setter_screenshot_saved": False,
         "birthday_submitted": False,
+        "local_month_day_probe": {
+            "requested": select_local_month_day,
+            "month_arm_succeeded": False,
+            "month_popup_tapped": False,
+            "month_popup_screenshot_saved": False,
+            "month_form_after_back_saved": False,
+            "day_arm_succeeded": False,
+            "day_popup_tapped": False,
+            "day_popup_screenshot_saved": False,
+            "day_form_after_back_saved": False
+        },
         "account_delete_attempted": False,
         "first_basic_utid_status": "not_observed",
         "trainer_id_semantic_match": "not_tested",
@@ -505,6 +527,52 @@ def run(apk: Path, out: Path, settle: int = 25,
                         adb("shell","input","keyevent","KEYCODE_BACK",timeout=12)
                         time.sleep(2)
                         screenshot(out,"10_year1999_form_after_back.png")
+                        if select_local_month_day and observer is not None:
+                            # The native ARM64 agent verifies year=1999,
+                            # dropdown m_Value and the exact 12/31 original
+                            # month/day OptionData labels before any tap.
+                            mm = report["local_month_day_probe"]
+                            month_form = screenshot(
+                                out, "11_month_before_picker.png")
+                            if (month_form and match_known_ui(
+                                    month_form, "birthday_month_dropdown")):
+                                mm["month_arm_succeeded"] = bool(
+                                    hasattr(observer, "arm_local_month_4")
+                                    and observer.arm_local_month_4())
+                                if mm["month_arm_succeeded"]:
+                                    mm["month_popup_tapped"] = click_if_known(
+                                        month_form, "birthday_month_dropdown")
+                            if mm["month_popup_tapped"]:
+                                time.sleep(3)
+                                mm["month_popup_screenshot_saved"] = bool(
+                                    screenshot(out,"12_month_picker_after_setter.png"))
+                                adb("shell","input","keyevent","KEYCODE_BACK",
+                                    timeout=12)
+                                time.sleep(2)
+                                mm["month_form_after_back_saved"] = bool(
+                                    screenshot(out,"13_month_form_after_back.png"))
+                            # Do not arm day if month selection was not
+                            # accepted by the original OnMonthChangeValue.
+                            if mm["month_form_after_back_saved"]:
+                                day_form = screenshot(
+                                    out, "14_day_before_picker.png")
+                                if day_form and match_known_ui(
+                                        day_form, "birthday_day_dropdown"):
+                                    mm["day_arm_succeeded"] = bool(
+                                        hasattr(observer, "arm_local_day_5")
+                                        and observer.arm_local_day_5())
+                                    if mm["day_arm_succeeded"]:
+                                        mm["day_popup_tapped"] = click_if_known(
+                                            day_form, "birthday_day_dropdown")
+                                if mm["day_popup_tapped"]:
+                                    time.sleep(3)
+                                    mm["day_popup_screenshot_saved"] = bool(
+                                        screenshot(out,"15_day_picker_after_setter.png"))
+                                    adb("shell","input","keyevent","KEYCODE_BACK",
+                                        timeout=12)
+                                    time.sleep(2)
+                                    mm["day_form_after_back_saved"] = bool(
+                                        screenshot(out,"16_full_date_form_after_back.png"))
                 if probe_year_dpad and first_popup and match_known_ui(
                         first_popup,"year_popup_open") is not None:
                     # One non-activating keyboard navigation key, NEVER Enter,
