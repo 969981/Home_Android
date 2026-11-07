@@ -6,6 +6,9 @@ on:
     paths:
       - '.github/workflows/home41-emulator-arm64-realm.yml'
       - 'ci/home41_emulator_arm64_realm.py'
+      - 'ci/home41_emulator_diagnostics.py'
+      - 'ci/home41_emulator_stage_frida.py'
+      - 'ci/test_home41_emulator_stage_frida.py'
       - 'ci/test_home41_emulator_arm64_realm.py'
       - 'ci/home41_arm64_auth_timeline.js'
       - 'ci/home41_arm64_auth_timeline.py'
@@ -86,7 +89,7 @@ jobs:
           heap-size: 512M
           disable-animations: true
           emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
-          script: python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 16
+          script: python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year
 
       - name: Report strict ARM64 realm results and ordinary UI evidence
         if: always()
@@ -158,4 +161,11 @@ jobs:
               raise SystemExit("NOT VERIFIED: ARM64 emulated realm or IL2CPP hooks; see sanitized artifact")
           print("VERIFIED: emulated ARM64 realm + original libil2cpp native method hooks were installed")
           print("NO CLAIM: authentication, response payload, registration or basic.utid captured")
+          if r.get("birthday_year_dropdown_tapped") is not True or \
+             r.get("birthday_year_picker_screenshot_saved") is not True or \
+             r.get("birthday_submitted") is not False:
+              raise SystemExit("NOT VERIFIED: known age-picker page / safe year-open action")
+          if not (Path("ci-frida-results/08_birthdate_year_picker_open.png").is_file()):
+              raise SystemExit("NOT VERIFIED: missing actual year-picker screenshot")
+          print("VERIFIED: one controlled year selector tap and its screenshot; no birthday submitted")
           PY
