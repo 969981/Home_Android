@@ -193,6 +193,38 @@ def match_known_ui(data: bytes, stage: str):
     return None
 
 
+def caption_visual_changed(before: bytes, after: bytes, field: str) -> bool:
+    """Compare only the relevant public date UI caption rectangle, not OCR.
+
+    The age page still requires manual visual inspection. This is additional
+    pixel-change evidence only; it does not prove the exact text content.
+    """
+    if field not in {"year", "month", "day"}:
+        return False
+    if not (before.startswith(PNG_MAGIC) and after.startswith(PNG_MAGIC)):
+        return False
+    boxes = {
+        "year": (.12, .278, .27, .315),
+        "month": (.41, .278, .61, .315),
+        "day": (.73, .278, .90, .315),
+    }
+    try:
+        from PIL import Image, ImageChops
+        with Image.open(io.BytesIO(before)) as aa, Image.open(io.BytesIO(after)) as bb:
+            first,second=aa.convert("RGB"),bb.convert("RGB")
+            if first.size != second.size or first.width < 600:
+                return False
+            w,h=first.size
+            x0,y0,x1,y1=boxes[field]
+            rect=(int(w*x0),int(h*y0),int(w*x1),int(h*y1))
+            change=ImageChops.difference(first.crop(rect),second.crop(rect))
+            # Avoid single compression noise pixels being marked as a changed label.
+            gray=change.convert("L").point(lambda p: 255 if p > 22 else 0)
+            return sum(1 for v in gray.getdata() if v) >= 50
+    except (OSError,ValueError,ImportError):
+        return False
+
+
 def predeny_disposable_avd_permissions() -> dict:
     """Deny nonessential OS permissions on a fresh AVD; no location collected.
 
@@ -368,7 +400,8 @@ def run(apk: Path, out: Path, settle: int = 25,
         select_local_year_1999: bool = False,
         select_local_month_day: bool = False,
         probe_year_touch_scroll: bool = False,
-        probe_native_year_select: bool = False) -> dict:
+        probe_native_year_select: bool = False,
+        probe_native_full_date_select: bool = False) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     report = {
         "version": "4.1.0", "device": "disposable_github_actions_avd",
@@ -407,7 +440,15 @@ def run(apk: Path, out: Path, settle: int = 25,
             "year_touch_scroll_any_roi_change": False,
             "native_year_item_select_requested": probe_native_year_select,
             "native_year_item_select_armed": False,
-            "native_year_item_select_after_screenshot_saved": False
+            "native_year_item_select_after_screenshot_saved": False,
+            "native_full_date_requested": probe_native_full_date_select,
+            "year_caption_roi_changed": False,
+            "native_month_item_select_armed": False,
+            "native_month_item_select_screenshot_saved": False,
+            "month_caption_roi_changed": False,
+            "native_day_item_select_armed": False,
+            "native_day_item_select_screenshot_saved": False,
+            "day_caption_roi_changed": False
         },
         "account_delete_attempted": False,
         "first_basic_utid_status": "not_observed",
@@ -609,9 +650,54 @@ def run(apk: Path, out: Path, settle: int = 25,
                                                 # This screenshot follows a real original
                                                 # OnSelectItem(27) if the ARM64 hook fired.
                                                 # It may show the menu already closed.
+                                                year_after=screenshot(out,
+                                                        "17_native_year_OnSelectItem_after.png")
                                                 mm["native_year_item_select_after_screenshot_saved"] = bool(
-                                                    screenshot(out,
-                                                        "17_native_year_OnSelectItem_after.png"))
+                                                    year_after)
+                                                mm["year_caption_roi_changed"] = caption_visual_changed(
+                                                    year_again,year_after,"year")
+                                                # Now process month/day through the SAME
+                                                # original OnSelectItem, never set_value,
+                                                # with each step gated by ARM64 isSelected.
+                                                if (probe_native_full_date_select and
+                                                        mm["year_caption_roi_changed"] and year_after):
+                                                    month_before=screenshot(out,
+                                                        "18_native_month_before.png")
+                                                    if month_before and match_known_ui(
+                                                            month_before,"birthday_month_dropdown"):
+                                                        mm["native_month_item_select_armed"] = bool(
+                                                            hasattr(observer,"arm_native_month_item_select")
+                                                            and observer.arm_native_month_item_select())
+                                                    if mm["native_month_item_select_armed"]:
+                                                        mm["month_popup_tapped"] = click_if_known(
+                                                            month_before,"birthday_month_dropdown")
+                                                    if mm["month_popup_tapped"]:
+                                                        time.sleep(2)
+                                                        month_after=screenshot(out,
+                                                            "19_native_month_OnSelectItem_after.png")
+                                                        mm["native_month_item_select_screenshot_saved"] = bool(
+                                                            month_after)
+                                                        mm["month_caption_roi_changed"] = caption_visual_changed(
+                                                            month_before,month_after,"month")
+                                                        if mm["month_caption_roi_changed"] and month_after:
+                                                            day_before=screenshot(out,
+                                                                "19b_native_day_before.png")
+                                                            if day_before and match_known_ui(
+                                                                    day_before,"birthday_day_dropdown"):
+                                                                mm["native_day_item_select_armed"] = bool(
+                                                                    hasattr(observer,"arm_native_day_item_select")
+                                                                    and observer.arm_native_day_item_select())
+                                                            if mm["native_day_item_select_armed"]:
+                                                                mm["day_popup_tapped"] = click_if_known(
+                                                                    day_before,"birthday_day_dropdown")
+                                                            if mm["day_popup_tapped"]:
+                                                                time.sleep(2)
+                                                                day_after=screenshot(out,
+                                                                    "20_native_day_OnSelectItem_after.png")
+                                                                mm["native_day_item_select_screenshot_saved"] = bool(
+                                                                    day_after)
+                                                                mm["day_caption_roi_changed"] = caption_visual_changed(
+                                                                    day_before,day_after,"day")
                                             if (probe_year_touch_scroll and reopened and
                                                     match_known_ui(reopened,"year_popup_open")):
                                                 # Native Unity EnhancedScroller only:
