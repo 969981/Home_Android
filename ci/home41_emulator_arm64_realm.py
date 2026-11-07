@@ -151,12 +151,15 @@ def main() -> int:
     parser.add_argument("--arm64-script", type=Path,
         default=Path(__file__).with_name("home41_arm64_auth_timeline.js"))
     parser.add_argument("--settle-seconds", type=int, default=16)
+    parser.add_argument("--probe-birthday-year", action="store_true",
+                        help="Only open year picker after exact known birthdate UI; never submit")
     args = parser.parse_args()
     observer = ARM64RealmStageMonitor(
         args.server, args.network_script, args.arm64_script)
     report = diag.run(
         args.apk, args.output, settle=max(3,min(60,args.settle_seconds)),
-        observer=observer, select_china_mainland=True)
+        observer=observer, select_china_mainland=True,
+        probe_birthday_year=args.probe_birthday_year)
     obs = report.get("stage_monitor", {})
     arm = obs.get("arm64_emulated_realm", {})
     snapshot = arm.get("snapshot", {})
@@ -166,6 +169,10 @@ def main() -> int:
         "app_running": report.get("process_at_end"),
         "language_clicked": report.get("language_clicked"),
         "country_confirmation_clicked": report.get("country_confirmation_clicked"),
+        "birthday_year_dropdown_tapped": report.get("birthday_year_dropdown_tapped"),
+        "birthday_year_picker_screenshot_saved":
+            report.get("birthday_year_picker_screenshot_saved"),
+        "birthday_submitted": False,
         "frida_x64_status": obs.get("status"),
         "arm64_emulated_status": arm.get("status"),
         "arm64_emulated_error_type": arm.get("error_type"),
