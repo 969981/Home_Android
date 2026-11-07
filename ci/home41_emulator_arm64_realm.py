@@ -40,6 +40,9 @@ _ALLOWED_AGENT_EVENTS = frozenset({
     "firstboot_birthdata_year_change_entered",
     "firstboot_birthdata_month_change_entered",
     "firstboot_birthdata_day_change_entered",
+    "year_1999_local_setter_armed",
+    "year_1999_local_setter_returned",
+    "year_1999_local_setter_failed",
 })
 
 
@@ -55,6 +58,10 @@ def sanitize_birth_ui(raw: object) -> dict:
     n=src.get("year_option_count")
     return {
         **{key:src.get(key) is True for key in fields},
+        "year_setter_opted_in":src.get("year_setter_opted_in") is True,
+        "year_setter_attempted":src.get("year_setter_attempted") is True,
+        "year_setter_returned":src.get("year_setter_returned") is True,
+        "year_setter_failure":src.get("year_setter_failure") is True,
         "year_option_count": n if type(n) is int and 0<=n<=500 else None,
         "year_1999_index": (
             src.get("year_1999_index")
@@ -96,8 +103,11 @@ def sanitized_arm64_snapshot(raw: object) -> dict:
 
 
 class ARM64RealmStageMonitor(StageMonitor):
-    def __init__(self, server: Path, network_script: Path, arm64_script: Path):
+    def __init__(self, server: Path, network_script: Path, arm64_script: Path,
+                 select_year_1999: bool=False):
         super().__init__(server, network_script)
+        self.select_year_1999 = select_year_1999
+        self.local_year_set_arm_result = "not_attempted"
         self.arm64_script_path = arm64_script
         self.arm64_session = None
         self.arm64_agent = None
@@ -144,12 +154,28 @@ class ARM64RealmStageMonitor(StageMonitor):
             self.arm64_error_type = type(err).__name__
         return base
 
+    def arm_local_year_1999(self) -> bool:
+        if not self.select_year_1999 or not self.arm64_agent or \
+                self.arm64_realm_status != "emulated_realm_attached":
+            self.local_year_set_arm_result = "not_eligible"
+            return False
+        try:
+            allowed = self.arm64_agent.exports_sync.armlocalyear1999()
+            self.local_year_set_arm_result = (
+                "verified_options_arm_succeeded" if allowed
+                else "native_options_not_verified")
+            return allowed is True
+        except Exception as err:
+            self.local_year_set_arm_result = "frida_rpc_error_" + type(err).__name__
+            return False
+
     def finish(self) -> dict:
         evidence = {
             "status": self.arm64_realm_status,
             "error_type": self.arm64_error_type,
             "agent_script_error": self.arm64_script_error,
             "events": list(self.arm64_events),
+            "local_year_set_arm_result": self.local_year_set_arm_result,
             "raw_utid_saved": False,
             "http_response_body_saved": False,
             "arm64_rvas_used_in_native_x64_realm": False,
@@ -180,18 +206,22 @@ def main() -> int:
     parser.add_argument("--arm64-script", type=Path,
         default=Path(__file__).with_name("home41_arm64_auth_timeline.js"))
     parser.add_argument("--settle-seconds", type=int, default=16)
+    parser.add_argument("--select-local-year-1999", action="store_true",
+                        help="OPT IN: one original Unity dropdown setter call; no date submission")
     parser.add_argument("--probe-birthday-year", action="store_true",
                         help="Only open year picker after exact known birthdate UI; never submit")
     parser.add_argument("--probe-year-dpad", action="store_true",
                         help="On verified open year list send one non-selecting DPAD_DOWN key")
     args = parser.parse_args()
     observer = ARM64RealmStageMonitor(
-        args.server, args.network_script, args.arm64_script)
+        args.server, args.network_script, args.arm64_script,
+        select_year_1999=args.select_local_year_1999)
     report = diag.run(
         args.apk, args.output, settle=max(3,min(60,args.settle_seconds)),
         observer=observer, select_china_mainland=True,
         probe_birthday_year=args.probe_birthday_year,
-        probe_year_dpad=args.probe_year_dpad)
+        probe_year_dpad=args.probe_year_dpad,
+        select_local_year_1999=args.select_local_year_1999)
     obs = report.get("stage_monitor", {})
     arm = obs.get("arm64_emulated_realm", {})
     snapshot = arm.get("snapshot", {})
@@ -209,6 +239,8 @@ def main() -> int:
         "year_popup_verifiable_after_keyboard":
             report.get("year_popup_verifiable_after_keyboard"),
         "year_keyboard_image_changed": report.get("year_keyboard_image_changed"),
+        "local_year_setter_armed": obs.get("arm64_emulated_realm", {}).get(
+            "local_year_set_arm_result"),
         "frida_x64_status": obs.get("status"),
         "arm64_emulated_status": arm.get("status"),
         "arm64_emulated_error_type": arm.get("error_type"),
