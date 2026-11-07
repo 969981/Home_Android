@@ -1,0 +1,43 @@
+name: HOME 4.1.0 ARM64 IL2CPP auth serializer/basic timeline static tests
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/home41-arm64-auth-timeline-tests.yml'
+      - 'ci/home41_arm64_auth_timeline.js'
+      - 'ci/home41_arm64_auth_timeline.py'
+      - 'ci/test_home41_arm64_auth_timeline.py'
+      - 'ci/home41_arm64_readonly_runner.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify syntax and strict sanitized native-observer contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check ci/home41_arm64_auth_timeline.js
+          python -m py_compile ci/home41_arm64_auth_timeline.py ci/test_home41_arm64_auth_timeline.py
+          python -m unittest discover -s ci -p 'test_home41_arm64_auth_timeline.py' -v
+      - name: Assert no online account registration or production runtime proof
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Offline-only HOME 4.1.0 ARM64 auth timeline check'
+            echo ''
+            echo '- Tests verify callback event schema, redaction, known static offsets, client-side order and Frida lifecycle mocks.'
+            echo '- No Android ARM64 device, no actual HTTP request or response, no profile UTID and no accounts.'
+            echo '- A native ARM64 Android test device and normal single-account onboarding are still required for live proof.'
+          } >> "$GITHUB_STEP_SUMMARY"
