@@ -43,9 +43,17 @@ def report(event: str, **fields) -> None:
     print(json.dumps(item, ensure_ascii=False, sort_keys=True), flush=True)
 
 
-def process_alive(serial: str | None) -> bool:
+def process_id(serial: str | None) -> int | None:
+    """Read the actual HOME main-process PID, not just a shell exit code."""
     r = core.adb(["shell", "pidof", core.PACKAGE], serial, timeout=12)
-    return bool(r and r.returncode == 0 and (r.stdout or "").strip())
+    if not r or r.returncode != 0:
+        return None
+    matches = re.findall(r"\b[0-9]+\b", r.stdout or "")
+    return int(matches[0]) if matches else None
+
+
+def process_alive(serial: str | None) -> bool:
+    return process_id(serial) is not None
 
 
 def confirm(prompt_text: str, input_func=input) -> bool:
@@ -123,6 +131,12 @@ def capture_once(device, prepared_script: str, first_ui_id: str | None,
             if state["result"] == "not_started":
                 state["result"] = "no_valid_first_basic"
             return state, first_ui_id
+        if not state["read_only_observer_ready"]:
+            state["result"] = "first_basic_seen_before_observer_ready"
+            return state, first_ui_id
+        if not state["source_common_response_consumer"]:
+            state["result"] = "first_basic_caller_not_verified_common_response"
+            return state, first_ui_id
 
         if first_ui_id is None:
             report("manual_ui_comparison_required", phase=phase,
@@ -195,6 +209,10 @@ def run_acceptance(apk: Path, script_path: Path, serial: str | None,
         report("acceptance_failed", phase=1, result=first["result"],
                process_alive=first["process_alive"])
         return 3
+    first_pid = process_id(serial)
+    if first_pid is None:
+        report("acceptance_failed", phase=1, result="original_home_pid_unavailable")
+        return 3
 
     normal_client_usable = confirm(
         "Frida detached. Can you navigate the original HOME app normally? Type yes: ",
@@ -227,6 +245,11 @@ def run_acceptance(apk: Path, script_path: Path, serial: str | None,
     if second["result"] != "first_basic_matches_displayed_id" or not second["process_alive"]:
         report("acceptance_failed", phase=2, result=second["result"],
                process_alive=second["process_alive"], cold_start_performed=True)
+        return 3
+    new_pid = process_id(serial)
+    if new_pid is None or new_pid == first_pid:
+        report("acceptance_failed", phase=2, result="new_process_identity_not_confirmed",
+               cold_start_performed=True)
         return 3
     same_in_ui = confirm(
         "After cold start, does HOME display the SAME six-digit ID and work normally? Type yes: ",
