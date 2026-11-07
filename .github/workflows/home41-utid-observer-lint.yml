@@ -1,0 +1,36 @@
+name: HOME 4.1.0 read-only ARM64 Frida observer lint
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/home41-utid-observer-lint.yml'
+      - 'ci/home41_utid_readonly_arm64.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax-check public-safe observer
+        run: |
+          set -euo pipefail
+          node --check ci/home41_utid_readonly_arm64.js
+          python - <<'PY'
+          from pathlib import Path
+          s=Path("ci/home41_utid_readonly_arm64.js").read_text()
+          required=("Process.arch", "Interceptor.attach", "UDManager", "candidate_matches_target")
+          # Method label may appear in the comment; the static audit is not
+          # a substitute for an actual Frida execution.
+          assert "Process.arch" in s
+          assert "Interceptor.attach" in s
+          assert "candidate_matches_target" in s
+          assert "first_basic_utid_observed" in s
+          for forbidden in ("Memory.write", "sendHttp", "registerUser(", "deleteUser("):
+              assert forbidden not in s, forbidden
+          print("Syntax and source guard passed. No runtime hook was executed.")
+          PY
