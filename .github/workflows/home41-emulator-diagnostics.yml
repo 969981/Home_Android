@@ -1,0 +1,91 @@
+name: HOME 4.1.0 emulator runtime and network diagnostics (no account activity)
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/home41-emulator-diagnostics.yml'
+      - 'ci/home41_emulator_diagnostics.py'
+      - 'ci/test_home41_emulator_diagnostics.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: home41-disposable-emulator-diagnostics
+  cancel-in-progress: false
+
+jobs:
+  emulator:
+    name: Actual Android emulator / no ID-generation claim
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify exact original APK and test fail-closed navigation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q pillow
+          python -m py_compile ci/home41_emulator_diagnostics.py ci/test_home41_emulator_diagnostics.py
+          python -m unittest discover -s ci -p 'test_home41_emulator_diagnostics.py' -v
+          APK="$(find ROMS/4.1.0 -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          test "$(sha256sum "$APK" | cut -d' ' -f1)" = "8dee598028cd70441f645c8fff96b093b76778d625cdf07c60109eced50ffac1"
+          echo "HOME41_APK=$APK" >> "$GITHUB_ENV"
+          mkdir -p ci-results
+      - name: Enable KVM hardware acceleration
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -e /dev/kvm
+      - name: Launch actual HOME on disposable Android 15 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          ram-size: 4096M
+          heap-size: 512M
+          disable-animations: true
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: python ci/home41_emulator_diagnostics.py --apk "$HOME41_APK" --output ci-results --settle-seconds 25
+      - name: Explain diagnostics and account-verification limits
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path("ci-results/home41_emulator_report.json")
+          summary=Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a",encoding="utf-8") as f:
+              f.write("## HOME 4.1.0 disposable emulator diagnostics\n\n")
+              if p.is_file():
+                  r=json.loads(p.read_text(encoding="utf-8"))
+                  for k in ("result","apk_sha256","android_abis","android_native_bridge",
+                            "launch_event_sent","process_at_end","language_clicked",
+                            "language_confirmation_clicked","region_dropdown_expanded",
+                            "registration_status","first_basic_utid_status",
+                            "arm64_frida_runtime_status"):
+                      f.write(f"- **{k}**: `{r.get(k,'unavailable')}`\n")
+              else:
+                  f.write("No runtime report: runner/emulator did not reach script.\n")
+              f.write("\n**No account was registered, no Terms accepted, "
+                      "no server UTID was captured.** A green workflow is not proof of ID acquisition.\n")
+          PY
+      - name: Publish disposable read-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: home41-emulator-readonly-diagnostics
+          path: ci-results/
+          retention-days: 3
+          if-no-files-found: warn
