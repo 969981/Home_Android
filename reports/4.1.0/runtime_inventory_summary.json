@@ -1,0 +1,7 @@
+{
+  "copied_files": 0,
+  "eligible_files": 0,
+  "note": "No device cache was provided. APK-only assets cannot prove full Pokemon species coverage.",
+  "status": "runtime_cache_not_supplied",
+  "version": "4.1.0"
+}
