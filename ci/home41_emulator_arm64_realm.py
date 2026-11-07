@@ -42,6 +42,9 @@ _ALLOWED_AGENT_EVENTS = frozenset({
     "firstboot_birthdata_day_change_entered",
     "firstboot_year_scroll_open_entered",
     "firstboot_year_item_selection_entered",
+    "year_native_item_select_armed",
+    "year_native_item_select_returned",
+    "year_native_item_select_failed",
     "year_1999_local_setter_armed",
     "year_1999_local_setter_returned",
     "year_1999_local_setter_failed",
@@ -123,6 +126,23 @@ def sanitize_birth_ui(raw: object) -> dict:
             if type(src.get("year_dropdown_value_index")) is int
             and -1 <= src["year_dropdown_value_index"] <= 126 else None
         ),
+        "year_dropdown_is_selected": (
+            src.get("year_dropdown_is_selected")
+            if type(src.get("year_dropdown_is_selected")) is bool else None),
+        "month_dropdown_is_selected": (
+            src.get("month_dropdown_is_selected")
+            if type(src.get("month_dropdown_is_selected")) is bool else None),
+        "day_dropdown_is_selected": (
+            src.get("day_dropdown_is_selected")
+            if type(src.get("day_dropdown_is_selected")) is bool else None),
+        "native_year_item_select_attempted": (
+            src.get("native_year_item_select_attempted") is True),
+        "native_year_item_select_returned": (
+            src.get("native_year_item_select_returned") is True),
+        "native_year_item_select_confirmed": (
+            src.get("native_year_item_select_confirmed") is True),
+        "native_year_item_select_failure": (
+            src.get("native_year_item_select_failure") is True),
         "year_dropdown_value_equals_1999_option": (
             src.get("year_dropdown_value_equals_1999_option") is True),
         "month_dropdown":sanitize_option_status(
