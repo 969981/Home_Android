@@ -25,6 +25,8 @@ const TARGET = '888888';
 const RVA = Object.freeze({
   registerSerialize: 0x1D334A4,
   registerPackedWriteComplete: 0x1D335C0,
+  registerRequestFormatter: 0x205AEF0,
+  registerResponseFormatter: 0x205DA3C,
   registerCallback: 0x1D33294,
   tokenSerialize: 0x1D35888,
   tokenCallback: 0x1D35AD0,
@@ -38,6 +40,8 @@ const begun = Date.now();
 const counts = {
   registration_request_serializer_entered: 0,
   registration_lng_cntry_packed_write_seen: 0,
+  registration_request_formatter_entered: 0,
+  registration_response_formatter_entered: 0,
   registration_response_handler_entered: 0,
   token_request_serializer_entered: 0,
   token_response_handler_entered: 0,
@@ -162,6 +166,12 @@ function install(lib) {
       }
     }
   });
+  // The native formatter entry identifies *serialization/deserialization*,
+  // not verified HTTP send/receive completion.
+  hook('register_request_formatter', RVA.registerRequestFormatter,
+       onEntered('registration_request_formatter_entered'));
+  hook('register_response_formatter', RVA.registerResponseFormatter,
+       onEntered('registration_response_formatter_entered'));
   hook('register_callback', RVA.registerCallback,
        onEntered('registration_response_handler_entered'));
   hook('token_serialize', RVA.tokenSerialize,
