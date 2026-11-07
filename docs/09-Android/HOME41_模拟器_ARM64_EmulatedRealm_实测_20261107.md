@@ -260,3 +260,29 @@ Python 运行器现在对 `--realm emulated` 进行特别预检：原始本地 A
 本次 Actions 在最后检查阶段失败，直接原因是旧的**只验证年份**门槛仍要求 `exact_birthdate_selected=false`；而这轮完整内部生日变为 true。真实数据和原版回调 **已经成功**，失败不是 Frida/Unity 失败。已将旧门槛改为只接受完整日期模式，并在新代码中加入 **重新打开年份菜单（内部 `m_Value=27`）的真实截图实验**：如果菜单能滚到 1999，可进一步使用原生 UI 选择来修复三个下拉框的可见占位符。这一后续实验结果未出之前，不宣称可视 UI 成功。
 
 全程：未提交生日、未同意条款、未执行账户创建/删除、未绑定 Nintendo Account、未读取或保存服务器原始 UTID、未取得六位训练家 ID。
+
+
+## 2026-11-08：占位符问题根因候选——Setter 与 OnSelectItem 并非同一路径
+
+上一轮实测 [#42391228890](https://github.com/969981/Home_Android/actions/runs/42391228890)：通过原版 HOME 的下拉组件 setter 得到 `inputedYear=1999, inputedMonth=4, inputedDay=5`，组件索引分别为 `27/3/4`，然而 `16_full_date_form_after_back.png` 及 **重新打开年份列表** `17_year_reopened_index27.png` 的界面仍呈现【年／月／日】占位符，重新打开年份列表依旧从 2026 显示。
+
+这不是登录 API 问题，原版 AArch64 反汇编（[方法静态审计 #42384802086](https://github.com/969981/Home_Android/actions/runs/42384802086)，`custom_dropdown_onselect.asm`、`custom_dropdown_setvalue.asm`、`custom_scroll_open.asm`）揭示两个不同语义的代码路径：
+
+```asm
+; CustomTMPDropdown.OnSelectItem(int dataIndex), RVA 0x1F15084
+0x1F15150 MOV  W8,#1
+0x1F15160 STRB W8,[X20,#352]     ; isSelected=true，+0x160
+0x1F15164 BL   0x1F1401C          ; SetValue(dataIndex,true)
+0x1F15178 B    0x1F14BE0          ; Hide()
+```
+
+而原版 `CustomTMPDropdown.set_value(int)`（RVA `0x1F14014`）调用 `SetValue(index,true)`，主要改变 `m_Value(+0x138)` 并刷新文字；**没有上述 `isSelected=true` 与 `Hide()` 完整交互路径**。所以先前只用 Setter 看似成功，却没有证明控件被 UI 真正确认。另一处 `CustomTMPDropdownScrollList.Open(int value)`（`0x1F14C90`）反汇编未发现读取 X1 参数值来控制初始滚动位置，因此 `m_Value=27` 不自动将列表滚到 1999 是符合当前原版指令证据的。
+
+本次新增：
+- 原生 Hook `CustomTMPDropdownScrollList.Open`（`0x1F14C90`）：在不输出私人字符串/指针前提下记录年份菜单实际接收的合法索引。
+- 原生 Hook `CustomTMPDropdown.OnSelectItem`（`0x1F15084`）：只观察是否真的走用户选项选择事件。
+- `birthdate_ui.year_dropdown_is_selected/month_dropdown_is_selected/day_dropdown_is_selected`：读取原版 `isSelected +0x160` 的布尔状态，而不是用 `m_Value` 代替。
+- **实验模式** `--probe-native-year-select`：必须本人显式传入；在 1999-04-05 内部已核验、`yearDropdown.m_Value=27`、`isSelected=false` 的情况下，才允许在原版 Unity Show 主线程调用一次原版 `OnSelectItem(27)` 并核对 `isSelected` 与新截图。不会提交生日、协议或创建账号。若内存状态或 NativeBridge RVA 不符，就拒绝调用。
+- **另一独立模式** `--probe-year-touch-scroll`：在截图匹配年份弹窗后最多进行四次短滑动，保存每步屏幕，尝试确定用户自然选择是否可行。两种模式应分别验证，不应同时用于同一次测试。
+
+此处只是根因候选：即便 `isSelected=true`，仍须在真实截图独立验证年份框是否真的显示 **1999**，不能仅凭事件计数推断 GUI 已修复。当前尚未点击出生日期【下一步】，更无真实服务端 `basic.utid`。
