@@ -48,6 +48,10 @@ EVENT_NAMES = frozenset({
     "basic_missing_numeric_utid",
     "basic_read_failed",
     "first_basic_utid_observed",
+    "firstboot_birthdata_setdata_entered",
+    "firstboot_birthdata_year_change_entered",
+    "firstboot_birthdata_month_change_entered",
+    "firstboot_birthdata_day_change_entered",
 })
 CATEGORICAL_REASON = frozenset({
     "not_native_arm64", "rva_outside_module", "module_watcher_failed"
@@ -55,6 +59,8 @@ CATEGORICAL_REASON = frozenset({
 OBSERVER_NAMES = frozenset({
     "register_serialize", "register_packed_write", "register_callback",
     "register_request_formatter", "register_response_formatter",
+    "birthview_setdata", "birthview_year_change",
+    "birthview_month_change", "birthview_day_change",
     "token_serialize", "token_callback", "login_serialize",
     "login_callback", "common_response", "set_basic"
 })
@@ -95,7 +101,10 @@ def sanitize_timeline_event(message: object) -> dict | None:
         clean["observer"] = source["observer"]
     if source.get("reason") in CATEGORICAL_REASON:
         clean["reason"] = source["reason"]
-    for key in ("from_common_basic_consumer", "candidate_matches_target",
+    for key in ("raw_birthdate_values_redacted", "field_offsets_static_only",
+                "raw_year_value_redacted", "raw_month_value_redacted",
+                "raw_day_value_redacted",
+                "from_common_basic_consumer", "candidate_matches_target",
                 "source_endpoint_verified", "display_id_semantics_verified",
                 "values_redacted", "fields_readable",
                 "actual_http_request_send_verified"):
@@ -179,6 +188,12 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
         # These are always false until additional independent evidence exists.
         "http_request_transmitted_verified": False,
         "http_response_source_endpoint_verified": False,
+        "birthday_controller_hook_activity": {
+            "setdata_entered": "firstboot_birthdata_setdata_entered" in order,
+            "year_change_entered": "firstboot_birthdata_year_change_entered" in order,
+            "month_change_entered": "firstboot_birthdata_month_change_entered" in order,
+            "day_change_entered": "firstboot_birthdata_day_change_entered" in order,
+        },
         "lng_cntry_enum_ui_mapping_verified": False,
         "six_digit_id_equals_starter_ot_verified": False,
         "nintendo_account_binding_attempted_by_runner": False,
