@@ -60,6 +60,18 @@ def safe_relative(filename: str) -> Path:
 def kind(path: str, magic: bytes) -> str:
     name = path.lower().replace("\\", "/")
     base = name.rsplit("/", 1)[-1]
+    # Unity 2020+ serialized format 22 frequently has GUID-only filenames,
+    # without a .assets extension. The header is big-endian and its first
+    # 8 bytes (legacy sizes) can be zero for the 64-bit extended header.
+    if name.startswith("assets/bin/data/") and re.search(r"\.split\d+$", name):
+        return "unity_split_chunk"
+    if name.startswith("assets/ab/") and name.endswith(".aba"):
+        return "aba_container_candidate"
+    if (name.startswith("assets/bin/data/") and len(magic) >= 20
+            and magic[:8] == bytes(8)
+            and 22 <= int.from_bytes(magic[8:12], "big") <= 31
+            and magic[12:20] == bytes(8)):
+        return "unity_serialized_candidate"
     if magic.startswith((b"UnityFS", b"UnityWeb", b"UnityRaw")):
         return "unity_bundle"
     if magic.startswith(b"\x7fELF"):

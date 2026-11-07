@@ -45,6 +45,13 @@ def export(version: str, root: Path, report: Path, output: Path, max_size_mib: i
         raise SystemExit("Install tools/requirements-unity.txt first") from e
     tool_version = "UnityPy " + str(getattr(UnityPy, "__version__", "unknown"))
     items = load_candidates(report / "resource_candidates.csv")
+    # A split source must be concatenated before UnityPy can read it.
+    # Reassembled assets are derived files; their source is labeled explicitly.
+    reassembled_root = ROOT / "Unpack" / version / "unity" / "reassembled"
+    for extra in sorted(reassembled_root.rglob("*")) if reassembled_root.exists() else []:
+        if extra.is_file():
+            items.append({"path": "@reassembled/" + extra.relative_to(reassembled_root).as_posix(),
+                          "size": extra.stat().st_size, "kind": "unity_serialized_candidate"})
     stats = Counter()
     rows = []
     size_limit = max_size_mib * 1024 * 1024
@@ -54,7 +61,8 @@ def export(version: str, root: Path, report: Path, output: Path, max_size_mib: i
         apk_sha = json.loads(p.read_text(encoding="utf-8")).get("apk_sha256", "")
     for record in items:
         relative = record["path"]
-        src = root / relative
+        src = (reassembled_root / relative[len("@reassembled/"):]
+               if relative.startswith("@reassembled/") else root / relative)
         size = int(record["size"])
         if size > size_limit:
             stats["skipped_too_large"] += 1

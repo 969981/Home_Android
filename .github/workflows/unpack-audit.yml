@@ -30,6 +30,8 @@ jobs:
         run: python tools/home.py audit --version 4.1.0
       - name: Extract the real APK
         run: python tools/home.py extract --version 4.1.0
+      - name: Reassemble fragmented Unity serialized assets
+        run: python tools/reassemble_splits.py --version 4.1.0
       - name: Scan all extracted file headers and libraries
         run: python tools/home.py scan --version 4.1.0
       - name: Install Unity decode dependencies
@@ -64,7 +66,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f reports/4.1.0/summary.json reports/4.1.0/scan_summary.json reports/4.1.0/unity_summary.json reports/4.1.0/index_summary.json reports/4.1.0/apk.sha256 reports/4.1.0/apk_entries.csv
+          git add -f reports/4.1.0/summary.json reports/4.1.0/scan_summary.json reports/4.1.0/unity_summary.json reports/4.1.0/index_summary.json reports/4.1.0/reassembly_summary.json reports/4.1.0/apk.sha256 reports/4.1.0/apk_entries.csv
           if git diff --cached --quiet; then
             echo "No metadata changes"
           else
