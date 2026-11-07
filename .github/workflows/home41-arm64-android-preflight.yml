@@ -1,0 +1,104 @@
+name: HOME 4.1.0 native ARM64 Android feasibility (no account activity)
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/home41-arm64-android-preflight.yml'
+      - 'ci/home41_arm64_device_preflight.py'
+      - 'ci/test_home41_arm64_device_preflight.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: home41-native-arm64-android-preflight
+  cancel-in-progress: false
+
+jobs:
+  native-android:
+    name: Verify Android guest ARM64, not just ARM64 Linux host
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify original APK and offline test fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile ci/home41_arm64_device_preflight.py
+          python -m unittest discover -s ci -p 'test_home41_arm64_device_preflight.py' -v
+          APK="$(find ROMS/4.1.0 -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          test "$(sha256sum "$APK" | cut -d' ' -f1)" = "8dee598028cd70441f645c8fff96b093b76778d625cdf07c60109eced50ffac1"
+          echo "HOME41_APK=$APK" >> "$GITHUB_ENV"
+          mkdir -p ci-arm64-results
+          uname -m
+      - name: Report host virtualization availability
+        shell: bash
+        run: |
+          echo "GitHub host: $(uname -m)"
+          if test -e /dev/kvm; then
+            echo "KVM available (guest architecture still unverified)"
+            ls -l /dev/kvm
+          else
+            echo "KVM unavailable: native Android guest may not be possible"
+          fi
+      - name: Try actual ARM64-v8a Android 35 AVD and original HOME APK
+        id: android_attempt
+        continue-on-error: true
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: arm64-v8a
+          profile: pixel_5
+          ram-size: 4096M
+          heap-size: 512M
+          disable-animations: true
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: python ci/home41_arm64_device_preflight.py --apk "$HOME41_APK" --output ci-arm64-results
+      - name: Report exact verification status
+        if: always()
+        shell: bash
+        env:
+          ANDROID_OUTCOME: ${{ steps.android_attempt.outcome }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          folder=Path("ci-arm64-results")
+          folder.mkdir(exist_ok=True)
+          p=folder/"home41_arm64_guest_preflight.json"
+          if not p.is_file():
+              p.write_text(json.dumps({
+                  "result":"android_emulator_setup_failed_before_probe",
+                  "android_native_arm64_status":"not_verified",
+                  "app_process_alive":False,
+                  "utid_hook_attempted":False,
+                  "first_basic_utid_status":"not_observed",
+                  "registration_attempted":False,
+                  "nintendo_account_bound":False},indent=2)+"\n",encoding="utf-8")
+          report=json.loads(p.read_text())
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a",encoding="utf-8") as f:
+              f.write("## Native ARM64 Android feasibility\n\n")
+              f.write("- Android emulator action outcome: `"+os.environ["ANDROID_OUTCOME"]+"`\n")
+              for field in ("result","android_native_arm64_status","app_process_alive",
+                            "utid_hook_attempted","first_basic_utid_status"):
+                  f.write("- "+field+": `"+str(report.get(field,"unknown"))+"`\n")
+              f.write("\nARM64 Linux host != ARM64 Android guest. "
+                      "No Nintendo binding, account creation, or ID capture attempted.\n")
+          print(json.dumps({"result": report.get("result"),
+                            "android_attempt":os.environ["ANDROID_OUTCOME"]}))
+      - name: Publish public-safe diagnostics only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: home41-native-arm64-android-preflight
+          path: ci-arm64-results/
+          if-no-files-found: warn
+          retention-days: 3
