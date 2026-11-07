@@ -16,6 +16,7 @@ import subprocess
 import time
 import urllib.request
 import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 EXPECTED_APK = "8dee598028cd70441f645c8fff96b093b76778d625cdf07c60109eced50ffac1"
@@ -140,6 +141,83 @@ def match_known_ui(data: bytes, stage: str):
     return None
 
 
+
+def immersive_hint_position(data: bytes):
+    """Use only the observed Android OS full-screen overlay color signature."""
+    if not data.startswith(PNG_MAGIC):
+        return None
+    try:
+        from PIL import Image
+        with Image.open(io.BytesIO(data)) as src:
+            im = src.convert("RGB")
+    except (ImportError, OSError, ValueError):
+        return None
+    w, h = im.size
+    if w < 600 or h < 1200 or not 1.9 < h / w < 2.5:
+        return None
+
+    def pixel(x, y):
+        return im.getpixel((int(w * x), int(h * y)))
+
+    def near(a, b, t=16):
+        return all(abs(x - y) <= t for x, y in zip(a, b))
+
+    if (near(pixel(.5, .055), (238, 237, 244)) and
+            near(pixel(.75, .24), (238, 237, 244)) and
+            near(pixel(.85, .28), (71, 93, 146)) and
+            near(pixel(.5, .39), (51, 51, 51))):
+        return int(w * .85), int(h * .28)
+    return None
+
+
+def launcher_anr_close_position(xml_text: str):
+    """Require explicit *Pixel Launcher* OS error and system-owned Close app."""
+    if "Pixel Launcher isn't responding" not in xml_text:
+        return None
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return None
+    for node in root.iter("node"):
+        a = node.attrib
+        if (a.get("text", "").strip() != "Close app"
+                or a.get("package", "") not in {"android", "com.android.systemui"}):
+            continue
+        m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+                         a.get("bounds", ""))
+        if m:
+            x1, y1, x2, y2 = map(int, m.groups())
+            if x2 > x1 and y2 > y1:
+                return (x1 + x2) // 2, (y1 + y2) // 2
+    return None
+
+
+def dismiss_known_os_overlays() -> list[dict]:
+    """Only Android overlay + known Pixel Launcher ANR, never HOME buttons."""
+    events = []
+    for _ in range(4):
+        cap = adb("exec-out", "screencap", "-p", timeout=25, binary=True)
+        png = cap.stdout if cap and cap.returncode == 0 else b""
+        pos = immersive_hint_position(png)
+        event = "dismiss_android_fullscreen_hint"
+        if pos is None:
+            event = "close_android_pixel_launcher_anr"
+            dump = adb("shell", "uiautomator", "dump",
+                       "/sdcard/window.xml", timeout=25)
+            read = adb("shell", "cat", "/sdcard/window.xml", timeout=12) if (
+                dump and dump.returncode == 0) else None
+            pos = launcher_anr_close_position(
+                (read.stdout or "") if read and read.returncode == 0 else "")
+        if pos is None:
+            break
+        clicked = adb("shell", "input", "tap", str(pos[0]), str(pos[1]), timeout=15)
+        success = bool(clicked and clicked.returncode == 0)
+        events.append({"action": event, "success": success})
+        if not success:
+            break
+        time.sleep(3)
+    return events
+
 def click_if_known(png: bytes, stage: str) -> bool:
     target = match_known_ui(png, stage)
     if target is None:
@@ -202,12 +280,18 @@ def run(apk: Path, out: Path, settle: int = 25) -> dict:
         # Grant CAMERA only on this camera-less, throwaway AVD; not HOME consent.
         grant = adb("shell", "pm", "grant", PACKAGE, "android.permission.CAMERA")
         report["camera_permission_grant"] = bool(grant and grant.returncode == 0)
+        # Prevent the standard OS immersive prompt from hiding HOME.
+        immersive = adb("shell", "settings", "put", "secure",
+                        "immersive_mode_confirmations", "confirmed", timeout=15)
+        report["android_immersive_setting_written"] = bool(
+            immersive and immersive.returncode == 0)
         adb("logcat", "-c", timeout=15)
         launched = adb("shell", "monkey", "-p", PACKAGE,
                        "-c", "android.intent.category.LAUNCHER", "1", timeout=50)
         report["launch_event_sent"] = bool(launched and launched.returncode == 0
                                           and "Events injected: 1" in (launched.stdout or ""))
         time.sleep(18)
+        report["os_overlay_actions"] = dismiss_known_os_overlays()
         initial = screenshot(out, "01_initial.png")
         report["process_after_18_seconds"] = process_alive()
         report["language_clicked"] = click_if_known(initial, "language")
@@ -230,8 +314,15 @@ def run(apk: Path, out: Path, settle: int = 25) -> dict:
             screenshot(out, "04_final.png"))
         report["process_at_end"] = process_alive()
         report["diagnostics"] = redacted_system_diagnostics()
-        report["result"] = ("app_running_no_registration" if report["process_at_end"]
-                            else "app_process_not_running")
+        report["ui_navigation_status"] = (
+            "region_dropdown_reached" if report["region_dropdown_expanded"] else
+            "language_confirmed" if report["language_confirmation_clicked"] else
+            "language_selected" if report["language_clicked"] else
+            "unknown_or_blocked")
+        report["result"] = (
+            "app_process_not_running" if not report["process_at_end"] else
+            "app_running_ui_not_verified" if not report["language_clicked"] else
+            "app_running_partial_onboarding_no_registration")
         report["interpretation"] = (
             "Screenshots must be visually reviewed. Neither CI success nor "
             "network reachability establishes HOME login or a real server UTID.")
@@ -261,7 +352,8 @@ def main():
     args = parser.parse_args()
     r = run(args.apk, args.output, max(0, min(args.settle_seconds, 120)))
     if r["result"] in {"blocked_apk_hash_mismatch", "blocked_install",
-                       "diagnostic_exception", "app_process_not_running"}:
+                       "diagnostic_exception", "app_process_not_running",
+                       "app_running_ui_not_verified"}:
         raise SystemExit(2)
 
 
