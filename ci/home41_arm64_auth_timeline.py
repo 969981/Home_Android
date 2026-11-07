@@ -314,14 +314,27 @@ def run(apk: Path, script_path: Path, serial: str | None,
             print(json.dumps(item, ensure_ascii=False, sort_keys=True), flush=True)
 
     try:
-        pid = device.spawn([core.PACKAGE])
-        session = (device.attach(pid, realm="emulated") if realm == "emulated"
-                   else device.attach(pid))
+        if realm == "emulated":
+            # The translated realm exists only AFTER HOME's ARM64 native
+            # libraries were brought up. Attach to the user's ALREADY RUNNING
+            # original HOME before they advance the registration UI.
+            p = core.adb(["shell", "pidof", core.PACKAGE], serial)
+            candidates = __import__("re").findall(
+                r"\\b\\d+\\b", p.stdout or "") if p and p.returncode == 0 else []
+            if not candidates:
+                raise RuntimeError("HOME_not_running_for_emulated_realm")
+            pid = int(candidates[0])
+            resumed = True  # never resume or kill someone else's process
+            session = device.attach(pid, realm="emulated")
+        else:
+            pid = device.spawn([core.PACKAGE])
+            session = device.attach(pid)
         script = session.create_script(script_source)
         script.on("message", on_message)
         script.load()
-        device.resume(pid)
-        resumed = True
+        if realm == "native":
+            device.resume(pid)
+            resumed = True
         # Wait for either first validated basic, hook failure or timeout.
         # Do NOT wait for the whole deadline after first_basic was observed.
         deadline = time.monotonic() + min(max(1, timeout), 3600)
