@@ -1,6 +1,6 @@
 {
   "by_status": {
-    "export_failed": 13
+    "unresolved_texture_stream": 13
   },
   "by_type": {
     "Texture2D": 13

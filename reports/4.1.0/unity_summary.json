@@ -1,12 +1,15 @@
 {
   "apk_sha256": "8dee598028cd70441f645c8fff96b093b76778d625cdf07c60109eced50ffac1",
+  "audio_sample_files": 36,
   "candidate_containers": 1471,
   "containers_parsed": 1471,
+  "exported_AudioClip": 36,
+  "exported_Font": 13,
   "exported_Mesh": 35,
   "exported_Sprite": 831,
   "exported_TextAsset": 85,
   "exported_Texture2D": 368,
-  "identified_only": 37578,
+  "identified_only": 37542,
   "note": "Mesh OBJ is geometry only; rigging, materials, motion and GLB are not validated.",
   "object_AnimationClip": 145,
   "object_Animator": 192,
@@ -71,10 +74,10 @@
   "object_UnityConnectSettings": 1,
   "object_Unknown (655991488)": 1,
   "object_VFXManager": 1,
-  "object_export_failed": 13,
   "objects_total": 72842,
   "scope": "Local APK Unity candidates only",
   "status": "completed_with_failures",
   "tool": "UnityPy 1.25.4",
+  "unresolved_texture_stream": 13,
   "version": "4.1.0"
 }
