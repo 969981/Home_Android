@@ -3,6 +3,7 @@
   "apk_name": "jp.pokemon.pokemonhome_4.1.0-81_minAPI23(arm64-v8a)(nodpi)_apkmirror.com.apk",
   "apk_sha256": "8dee598028cd70441f645c8fff96b093b76778d625cdf07c60109eced50ffac1",
   "by_kind": {
+    "aba_container_candidate": 7,
     "android_dex": 3,
     "android_resource_candidate": 38,
     "audio_candidate": 36,
@@ -10,8 +11,9 @@
     "image_png": 66,
     "native_elf": 9,
     "text_or_data_candidate": 3,
-    "unity_serialized_candidate": 3,
-    "unknown": 1651
+    "unity_serialized_candidate": 1470,
+    "unity_split_chunk": 59,
+    "unknown": 118
   },
   "first_crc_error": null,
   "scope": "APK ZIP audit; does not imply Unity asset decoding",

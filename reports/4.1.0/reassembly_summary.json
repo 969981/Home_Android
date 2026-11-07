@@ -1,0 +1,19 @@
+{
+  "failed": 0,
+  "groups": 1,
+  "note": "Output is a derived file. Raw APK extracted split chunks are unchanged.",
+  "outputs": [
+    {
+      "bytes": 61082952,
+      "error": "",
+      "output_path": "Unpack/4.1.0/unity/reassembled/assets/bin/Data/sharedassets0.assets",
+      "parts": 59,
+      "sha256": "5cf62e3864b2ca38a3ee7cc21e203875acf05c0559afff3a441db1fa72b77806",
+      "source_prefix": "assets/bin/Data/sharedassets0.assets",
+      "status": "reassembled"
+    }
+  ],
+  "reassembled": 1,
+  "split_files": 59,
+  "version": "4.1.0"
+}

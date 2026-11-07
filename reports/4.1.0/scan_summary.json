@@ -1,5 +1,6 @@
 {
   "by_kind": {
+    "aba_container_candidate": 7,
     "android_dex": 3,
     "android_resource_candidate": 38,
     "audio_candidate": 36,
@@ -7,8 +8,9 @@
     "image_png": 66,
     "native_elf": 9,
     "text_or_data_candidate": 3,
-    "unity_serialized_candidate": 3,
-    "unknown": 1651
+    "unity_serialized_candidate": 1470,
+    "unity_split_chunk": 59,
+    "unknown": 118
   },
   "il2cpp_binary_present": true,
   "il2cpp_metadata_present": true,
@@ -107,7 +109,7 @@
     "libunity.so"
   ],
   "scanned_files": 1810,
-  "unity_candidates": 3,
+  "unity_candidates": 1529,
   "unity_possible": true,
   "unity_runtime_present": true,
   "version": "4.1.0"
