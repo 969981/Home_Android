@@ -13,3 +13,8 @@ python tools/il2cpp_sections.py --version 4.1.0
 python tools/unity_references.py --version 4.1.0
 python tools/cache_diff.py --version 4.1.0
 ```
+
+## 新发现：FSB5 子容器
+真实 7 个 `.aba` 中，4 个 BGM 文件在偏移 1652、1643、1688、1671 找到 `FSB5` 签名。根据 FSB5 v0/v1 的头部字段实现 `tools/aba_fsb5.py`，校验版本、样本数、sample-header 大小、name-table 大小、data 大小、容器边界后才允许从原始 .aba 中拷贝其子区间至 .fsb。
+
+这只能证明存在有效 FSB5 子容器，不意味着未知 .aba 前部或其他 3 个 cap 文件已解包。公共仓库默认只生成验证报告，私有仓库可用 `--out Unpack/Android/4.1.0` 导出 FSB5 原始流，再用 vgmstream 等工具独立解码。
