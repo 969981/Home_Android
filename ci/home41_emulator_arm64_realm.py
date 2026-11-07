@@ -45,6 +45,12 @@ _ALLOWED_AGENT_EVENTS = frozenset({
     "year_native_item_select_armed",
     "year_native_item_select_returned",
     "year_native_item_select_failed",
+    "month_native_item_select_armed",
+    "month_4_native_item_select_returned",
+    "month_4_native_item_select_failed",
+    "day_native_item_select_armed",
+    "day_5_native_item_select_returned",
+    "day_5_native_item_select_failed",
     "year_1999_local_setter_armed",
     "year_1999_local_setter_returned",
     "year_1999_local_setter_failed",
@@ -143,6 +149,22 @@ def sanitize_birth_ui(raw: object) -> dict:
             src.get("native_year_item_select_confirmed") is True),
         "native_year_item_select_failure": (
             src.get("native_year_item_select_failure") is True),
+        "native_month_item_select_attempted": (
+            src.get("native_month_item_select_attempted") is True),
+        "native_month_item_select_returned": (
+            src.get("native_month_item_select_returned") is True),
+        "native_month_item_select_confirmed": (
+            src.get("native_month_item_select_confirmed") is True),
+        "native_month_item_select_failure": (
+            src.get("native_month_item_select_failure") is True),
+        "native_day_item_select_attempted": (
+            src.get("native_day_item_select_attempted") is True),
+        "native_day_item_select_returned": (
+            src.get("native_day_item_select_returned") is True),
+        "native_day_item_select_confirmed": (
+            src.get("native_day_item_select_confirmed") is True),
+        "native_day_item_select_failure": (
+            src.get("native_day_item_select_failure") is True),
         "year_dropdown_value_equals_1999_option": (
             src.get("year_dropdown_value_equals_1999_option") is True),
         "month_dropdown":sanitize_option_status(
