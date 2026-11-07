@@ -138,6 +138,18 @@ def match_known_ui(data: bytes, stage: str):
                 all(near(at(.3, y), (248, 250, 245), 12)
                     for y in (.24, .30, .36, .42, .48, .54, .60))):
             return (int(w * .82), int(h * .48))
+    elif stage == "country_confirmation":
+        # Real Actions #42373066707 screenshot after tapping China mainland:
+        # a confirmation modal with orange YES at normalized (.71, .635).
+        # This only confirms a disposable guest UI selection; no account
+        # registration, birthday or Terms are ever submitted.
+        if (near(at(.5, .02), (126, 151, 101), 12) and
+                near(at(.5, .14), (23, 107, 91), 12) and
+                near(at(.5, .36), (247, 251, 247), 12) and
+                near(at(.5, .53), (247, 251, 247), 12) and
+                near(at(.71, .635), (255, 175, 12), 12) and
+                near(at(.2, .635), (247, 251, 247), 12)):
+            return (int(w * .71), int(h * .635))
     elif stage == "china_mainland":
         # Match the real screenshot from Actions #42357608036 exactly.
         # Never tap unknown dropdowns or a subsequent Terms/birthday page.
@@ -327,6 +339,9 @@ def run(apk: Path, out: Path, settle: int = 25,
         "registration_status": "not_attempted",
         "terms_accepted": False,
         "country_selected": False,
+        "country_option_tapped": False,
+        "country_confirmation_clicked": False,
+        "country_server_persistence_verified": False,
         "network_response_body_captured": False,
         "ui_settings_are_backend_response": False,
         "birthday_entered": False,
@@ -415,12 +430,19 @@ def run(apk: Path, out: Path, settle: int = 25,
             if select_china_mainland:
                 time.sleep(4)
                 menu = screenshot(out, "04_region_expanded.png")
-                report["country_selected"] = click_if_known(menu, "china_mainland")
-                if report["country_selected"]:
-                    observer.mark("country_selected")
-                    time.sleep(8)
-                    report["country_selection_screenshot_saved"] = bool(
-                        screenshot(out, "05_country_selected.png"))
+                report["country_option_tapped"] = click_if_known(
+                    menu, "china_mainland")
+                if report["country_option_tapped"]:
+                    time.sleep(3)
+                    modal = screenshot(out, "05_country_confirmation_modal.png")
+                    report["country_confirmation_clicked"] = click_if_known(
+                        modal, "country_confirmation")
+                    if report["country_confirmation_clicked"]:
+                        report["country_selected"] = True
+                        observer.mark("country_selected")
+                        time.sleep(8)
+                        report["country_selection_screenshot_saved"] = bool(
+                            screenshot(out, "06_after_country_confirmation.png"))
         time.sleep(settle)
         report["final_screenshot_saved"] = bool(
             screenshot(out, "04_final.png"))
