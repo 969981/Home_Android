@@ -35,9 +35,10 @@ class RuntimeCacheTest(unittest.TestCase):
             self.assertEqual(result["copied_files"],2)
             self.assertEqual(result["excluded_sensitive_path"],1)
             self.assertEqual(result["unrecognized"],1)
-            self.assertEqual(pokemon_scan("4.1.0",output,report)["status"],"no_cached_unity_assets" if False else "scanned")
-            self.assertTrue((report/"pokemon_cache_summary.json").is_file())
-            self.assertEqual(inventory("4.1.0",None,d/"no_cache")["status"],"runtime_cache_not_supplied")
+            self.assertTrue((output/"unity_bundle").is_dir())
+            empty_report=d/"no_cache"
+            self.assertEqual(inventory("4.1.0",None,empty_report)["status"],"runtime_cache_not_supplied")
+            self.assertEqual(pokemon_scan("4.1.0",output,empty_report)["status"],"no_cached_unity_assets")
     def test_il2cpp_name_hints(self):
         with tempfile.TemporaryDirectory() as td:
             d=Path(td)
