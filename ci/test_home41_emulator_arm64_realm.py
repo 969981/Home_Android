@@ -85,6 +85,43 @@ class ARM64RealmContractTests(unittest.TestCase):
             self.assertIsNone(mod.sanitize_birth_ui(
                 {"year_1999_index":val})["year_1999_index"])
 
+    def test_local_year_setter_is_inert_without_explicit_optin(self):
+        monitor=mod.ARM64RealmStageMonitor(
+            Path("unused"),Path("unused"),Path("unused"))
+        monitor.arm64_realm_status="emulated_realm_attached"
+        monitor.arm64_agent=SimpleNamespace(exports_sync=SimpleNamespace(
+            armlocalyear1999=lambda: (_ for _ in ()).throw(
+                AssertionError("must never arm without flag"))))
+        self.assertFalse(monitor.arm_local_year_1999())
+        self.assertEqual(monitor.local_year_set_arm_result,"not_eligible")
+
+    def test_local_year_setter_needs_verified_agent_rpc(self):
+        calls=[]
+        monitor=mod.ARM64RealmStageMonitor(
+            Path("unused"),Path("unused"),Path("unused"),
+            select_year_1999=True)
+        monitor.arm64_realm_status="emulated_realm_attached"
+        monitor.arm64_agent=SimpleNamespace(exports_sync=SimpleNamespace(
+            armlocalyear1999=lambda: calls.append(True) or True))
+        self.assertTrue(monitor.arm_local_year_1999())
+        self.assertEqual(calls,[True])
+        self.assertEqual(monitor.local_year_set_arm_result,
+                         "verified_options_arm_succeeded")
+
+    def test_local_year_setter_rejects_invalid_or_unready_agent(self):
+        monitor=mod.ARM64RealmStageMonitor(
+            Path("unused"),Path("unused"),Path("unused"),
+            select_year_1999=True)
+        monitor.arm64_realm_status="emulated_realm_not_attached"
+        self.assertFalse(monitor.arm_local_year_1999())
+        self.assertEqual(monitor.local_year_set_arm_result,"not_eligible")
+        monitor.arm64_realm_status="emulated_realm_attached"
+        monitor.arm64_agent=SimpleNamespace(exports_sync=SimpleNamespace(
+            armlocalyear1999=lambda: False))
+        self.assertFalse(monitor.arm_local_year_1999())
+        self.assertEqual(monitor.local_year_set_arm_result,
+                         "native_options_not_verified")
+
     def test_non_dict_snapshot_fails_closed(self):
         self.assertEqual(mod.sanitized_arm64_snapshot(None),
                          {"status":"invalid_snapshot"})
