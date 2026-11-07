@@ -77,6 +77,32 @@ class NetworkMetadataTests(unittest.TestCase):
         self.assertEqual(loc,(540,int(2340*.54)))
         self.assertIsNone(stage.diag.match_known_ui(buf.getvalue(),"terms"))
 
+    def test_year_popup_requires_exact_signature_for_single_dpad_probe(self):
+        # Derived from real year 2026..2018 list; unknown pages must be inert.
+        img=Image.new("RGB",(1080,2340),(0,0,0))
+        for (x,y),rgb in (
+            ((.5,.15),(38,179,151)),
+            ((.2,.29),(238,240,235)),
+            ((.2,.35),(237,240,235)),
+            ((.2,.45),(237,240,235)),
+            ((.2,.55),(237,240,235)),
+            ((.5,.4),(178,239,174)),
+            ((.5,.95),(255,173,4)),
+        ):
+            img.putpixel((int(1080*x),int(2340*y)),rgb)
+        p=io.BytesIO()
+        img.save(p,format="PNG")
+        self.assertIsNotNone(stage.diag.match_known_ui(
+            p.getvalue(),"year_popup_open"))
+        # A popup is NOT a birthday form and can never trigger NEXT.
+        self.assertIsNone(stage.diag.match_known_ui(
+            p.getvalue(),"birthday_year_dropdown"))
+        img.putpixel((int(1080*.2),int(2340*.35)),(0,0,0))
+        q=io.BytesIO()
+        img.save(q,format="PNG")
+        self.assertIsNone(stage.diag.match_known_ui(
+            q.getvalue(),"year_popup_open"))
+
     def test_birthdate_year_picker_requires_exact_known_screen(self):
         # Synthetic signature is derived from a real, verified HOME 4.1.0
         # AVD screenshot. This test does NOT enter or submit any date.
