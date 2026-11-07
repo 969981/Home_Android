@@ -95,14 +95,27 @@ class StageMonitor:
         # CI host loopback. Never expose it to the public Internet.
         launched = diag.adb("shell", "/data/local/tmp/home41_frida_server",
                             "-D", timeout=18)
-        if not launched or launched.returncode != 0:
-            self.setup = "server_launch_failed"
-            return False
+        self.daemon_launch_succeeded = bool(launched and launched.returncode == 0)
+        if not self.daemon_launch_succeeded:
+            # -D has failed on some Android emulator builds. Use the official
+            # Android documented 'server &' pattern with ALL output discarded.
+            # This is only an ephemeral, pre-registration AVD.
+            background = diag.adb(
+                "shell",
+                "/data/local/tmp/home41_frida_server"
+                " -l 127.0.0.1:27042 >/dev/null 2>&1 </dev/null &",
+                timeout=18)
+            if not background or background.returncode != 0:
+                self.setup = "server_background_launch_failed"
+                return False
+            time.sleep(2)
         forwarded = diag.adb("forward", "tcp:27042", "tcp:27042", timeout=15)
         if not forwarded or forwarded.returncode != 0:
             self.setup = "adb_forward_failed"
             return False
-        self.setup = "x86_64_frida_server_started"
+        self.setup = ("x86_64_frida_server_started"
+                      if self.daemon_launch_succeeded
+                      else "x86_64_frida_server_background_attempted")
         return True
 
     def start(self) -> dict:
@@ -163,6 +176,8 @@ class StageMonitor:
     def finish(self) -> dict:
         summary = {
             "status": self.setup,
+            "server_daemon_launch_succeeded": getattr(
+                self, "daemon_launch_succeeded", None),
             "error_type": self.error_type,
             "agent_status": self.agent_status,
             "marked_stages": list(self.stages_marked),
@@ -210,6 +225,8 @@ def main() -> int:
         "guest_process_arch": status.get("network", {}).get("guest_process_arch"),
         "network_telemetry": status.get("network", {}).get("status", "unavailable"),
         "region_expanded": result.get("region_dropdown_expanded"),
+        "country_option_tapped": result.get("country_option_tapped"),
+        "country_confirmation_clicked": result.get("country_confirmation_clicked"),
         "country_selected": result.get("country_selected"),
         "registration_attempted": False,
         "first_basic_utid_status": "not_observed",
