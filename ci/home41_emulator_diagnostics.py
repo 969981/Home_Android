@@ -113,7 +113,7 @@ def match_known_ui(data: bytes, stage: str):
     def at(x, y):
         return im.getpixel((int(w * x), int(h * y)))
 
-    def near(point, expected, tolerance=16):
+    def near(point, expected, tolerance=28):
         return all(abs(a - b) <= tolerance for a, b in zip(point, expected))
 
     if stage == "language":
@@ -363,11 +363,21 @@ def run(apk: Path, out: Path, settle: int = 25) -> dict:
         initial = screenshot(out, "01_initial.png")
         report["process_after_18_seconds"] = process_alive()
         report["language_clicked"] = click_if_known(initial, "language")
+        if not report["language_clicked"]:
+            # A Unity page may still be fading in at the 18-second sample.
+            time.sleep(5)
+            retry = screenshot(out, "01b_language_retry.png")
+            report["language_clicked"] = click_if_known(retry, "language")
         if report["language_clicked"]:
             time.sleep(8)
             confirm = screenshot(out, "02_after_language.png")
             report["language_confirmation_clicked"] = click_if_known(
                 confirm, "language_confirmation")
+            if not report["language_confirmation_clicked"]:
+                time.sleep(5)
+                retry_confirm = screenshot(out, "02b_confirmation_retry.png")
+                report["language_confirmation_clicked"] = click_if_known(
+                    retry_confirm, "language_confirmation")
         else:
             report["language_confirmation_clicked"] = False
         if report["language_confirmation_clicked"]:
