@@ -206,7 +206,7 @@ def match_known_ui(data: bytes, stage: str):
     elif stage == "china_mainland":
         # Match the real screenshot from Actions #42357608036 exactly.
         # Never tap unknown dropdowns or a subsequent Terms/birthday page.
-        if (near(at(.5, .02), (202, 244, 161), 12) and
+        if (near(at(.5, .02), (202, 244, 161), 18) and
                 near(at(.5, .14), (38, 179, 151), 12) and
                 near(at(.5, .24), (248, 250, 245), 12) and
                 near(at(.2, .54), (18, 166, 168), 12) and
