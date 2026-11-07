@@ -286,3 +286,20 @@ Python 运行器现在对 `--realm emulated` 进行特别预检：原始本地 A
 - **另一独立模式** `--probe-year-touch-scroll`：在截图匹配年份弹窗后最多进行四次短滑动，保存每步屏幕，尝试确定用户自然选择是否可行。两种模式应分别验证，不应同时用于同一次测试。
 
 此处只是根因候选：即便 `isSelected=true`，仍须在真实截图独立验证年份框是否真的显示 **1999**，不能仅凭事件计数推断 GUI 已修复。当前尚未点击出生日期【下一步】，更无真实服务端 `basic.utid`。
+
+## 2026-11-08：原版 OnSelectItem 修复可见年份——真实 A/B 成功
+
+**真实 Actions**：[ #42392593321 ](https://github.com/969981/Home_Android/actions/runs/42392593321)；Artifact `home41-arm64-emulated-realm-proof` ID **13581822910**。
+
+对比同一次真实 Android 15 x86_64 + ARM NativeBridge 模拟器的截屏：
+
+- `16_full_date_form_after_back.png`：三个原版 Setter 的内存结果为 1999 / 4 / 5，但 UI 仍显示【年／月／日】。
+- `16b_year_before_reopen.png`：在原版年份控件上，`isSelected=false`。
+- `17_native_year_OnSelectItem_after.png`：通过 Frida **显式**对下一次原版 `CustomTMPDropdown.Show()` 结束时调用同一 Unity 线程上的原版 `CustomTMPDropdown.OnSelectItem(27)`，UI **确实显示“1999”**，月份/日期仍保持占位符。
+- `birthdate_ui.year_dropdown_is_selected=true`、`inputedYear==1999`、`m_Value==27`；`native_year_item_select_attempted/returned/confirmed=true`，`native_year_item_select_failure=false`。HOME 进程存活，没提交生日。
+
+这证明**完整 UI 选项路径不是单纯 `set_value`**；原版 OnSelectItem 设置 `isSelected=true` 后使年份可见。无需通过网络篡改、重签 APK 或重写任意内存来修正当前实验界面。
+
+这轮 Action 最终状态 `failure` 源于一条额外的、现已确认不成立的测试假设：要求 `NativeFunction(OnSelectItem)` 调用同时触发同一 Frida Agent 的 `Interceptor.attach(OnSelectItem)` 事件（该计数实际为 0）。真实原版方法副作用、原版字段回读与截图**已独立验证**，不能因这条事件计数为零就否认 OnSelectItem 实际执行。因此 CI 已更换为可靠的三个证据：原版调用成功 + `isSelected=true` + 目标下拉文字局部像素变化，仍需人工最终核对具体文字。
+
+新扩展 `--probe-native-full-date-select` 使用同一原版 `OnSelectItem` 路径依次确认 **1999、4、5**；需要每步 UI 截图变化、组件 `isSelected=true`、`m_Value` 和控制器字段匹配，不会触碰【下一步】或服务端注册。**完整年月日 UI 可见测试尚需以最新实际 Actions Artifact 核对**，在此之前不声明已通过。
