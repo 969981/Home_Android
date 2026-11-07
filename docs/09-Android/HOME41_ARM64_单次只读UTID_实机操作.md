@@ -1,0 +1,82 @@
+---
+title: "HOME Android 4.1.0 — 原生 ARM64 实机单次只读 UTID 观察"
+aliases: [HOME41 ARM64 Frida UTID 单次观察]
+tags: [pokemon-home, android, frida, arm64, utid, read-only, github-actions]
+status: "单次观察工具与 CI 单测已实现；真实 ARM64 Android 账号回调尚未执行"
+updated: 2026-11-07
+---
+
+# HOME 4.1.0 — 原版客户端启动前的 UTID 捕获
+
+> [!important] 范围
+> **不绑定 Nintendo Account**。只研究 Pokémon HOME 自身普通初始化中首次接收 `basic.utid` 的时序；不修改 `utid`、不伪造响应、不发起注册或删除请求、不绕过服务器认证与限流。
+>
+> 本文包含已完成的**本地工具和模拟单测**，不声称已在 ARM64 Android 实机抓到 ID。
+
+## 1. 验证结论及 GitHub 托管环境限制
+
+| Run | 环境 | 实际证据 |
+| --- | --- | --- |
+| [#42357608036](https://github.com/969981/Home_Android/actions/runs/42357608036) | GitHub Ubuntu / x86_64 Android + Native Bridge | 实际启动 HOME 4.1.0，完成简体中文、地区列表展开；没有注册，也没有 UTID |
+| [#42358724802](https://github.com/969981/Home_Android/actions/runs/42358724802) | Ubuntu ARM64 | `sdkmanager --install emulator` 报 `Failed to find package 'emulator'`，没有 Android 进程 |
+| [#42358882236](https://github.com/969981/Home_Android/actions/runs/42358882236) | Apple Silicon macOS 15 | Android emulator 启动十余分钟，ADB 一直无法连接，最终 `Timeout waiting for emulator to boot`；没有运行 HOME |
+| [只读观察器静态检查 #42358992327](https://github.com/969981/Home_Android/actions/runs/42358992327) | 普通 Linux CI | Frida JavaScript 语法和静态约束通过，不是实机 Hook |
+
+上述 ARM64 托管 Runner 失败不能推断 HOME 4.1.0 本身在 ARM64 Android 上失败，只说明没有得到可用的原生 Android 测试实例。不要因 Actions 结束状态为绿色就误报捕获成功；本项目 ARM64 两轮诊断 `continue-on-error` 的工作流设计只表示**故障被收集**。
+
+## 2. 源码与真实功能
+
+- `ci/home41_utid_readonly_arm64.js`：原生 IL2CPP 只读 Hook；观察注册、token/login 回调及 `UDManager.SetBasic`，把原始 UTID 只在内存中计算六位**候选**值并和目标比较，不发送原数值；接收一次后解除本 Hook。
+- `ci/home41_arm64_readonly_runner.py`：ADB/Frida 控制入口：`preflight`、`observe`、`restart-smoke`。用 `frida.spawn` 在原版 HOME 进程启动前装 Hook，再 `resume`；捕获结束后 `session.detach()`，不运行 `pm clear`、不卸载 APK、不停止 APP 进程。
+- `ci/test_home41_arm64_readonly_runner.py`：离线夹具，用于防误操作、APK 版本/哈希校验、模拟 Frida 生命周期与输出脱敏。
+- `.github/workflows/home41-arm64-readonly-observer-tests.yml`：公共 CI 仅执行静态检查及单测；没有设备/账号/认证数据。
+
+## 3. 实际 ARM64 设备先决条件
+
+- 一部**你本人控制的、原生 ARM64 Android 设备**，不能以 `x86_64 + libndk_translation` 替代。
+- 安装原始 APK（versionCode 81），本地文件 SHA-256 必须是 `8dee598028cd70441f645c8fff96b093b76778d625cdf07c60109eced50ffac1`；设备实际安装的 `base.apk` 也需要通过 `adb shell sha256sum` 校验。读取不到则暂停，不绕过校验。
+- 已启用 USB ADB；本机可用 Python 3.10+、`adb` 命令和与设备服务版本兼容的 Python `frida`。
+- Frida 必须有权附加官方原版 APP 的进程（通常需要对自己的测试设备具备 root/Frida Server 权限）；脚本不通过重签名或打补丁改变原始 APK。
+- HOME 的地区、真实适用生日、协议及初始宝可梦等正常首次使用流程仍要在官方 UI 中合法完成；本工具不会自动同意条款、注册、删除或绑定 Nintendo Account。
+
+## 4. Windows PowerShell 本地复现
+
+在仓库目录下运行，替换实际 APK 路径：
+
+```powershell
+git pull origin master
+adb devices
+adb shell getprop ro.product.cpu.abi
+py -3 -m pip install frida
+
+$apk = (Get-ChildItem "ROMS/4.1.0/*.apk" | Select-Object -First 1).FullName
+py -3 ci/home41_arm64_readonly_runner.py preflight --apk "$apk"
+
+# Frida Server 应已在自己控制的 ARM64 Android 设备上正常运行。
+# 首次 HOME 数据下发必须从进程创建前观察；目标号码仅在本地内存中比较。
+py -3 ci/home41_arm64_readonly_runner.py observe --apk "$apk" --target 888888 --timeout 600
+
+# 命中后若要单独验证官方 APP 冷启动，在确认自身账号状态后显式运行：
+py -3 ci/home41_arm64_readonly_runner.py restart-smoke --apk "$apk"
+```
+
+`observe` 的重要状态：
+- `original_home_running_with_read_only_hooks`：仅说明原版进程已由 Frida 启动；尚未证明注册或 ID 收取。
+- `read_only_observer_ready`：对应指定 `libil2cpp.so` 的 Hook 装载成功。
+- `first_basic_utid_observed`：首次读到可解析数字，输出 `candidate_matches_target` 布尔值及是否来自已知公共 basic 消费点。
+- `first_basic_captured_unverified_display_semantics`：仍需以 HOME 画面确认其是否等于真实六位 ID；**不代表**账号已经保存或可以重启。
+- `timeout_no_basic_observed`：超时不代表游戏没有 `utid`，可能注册尚未完成、回调未触发、Hook 地址不适用或服务器通信问题。
+
+## 5. 客户端接管验收
+
+正式完成“目标命中后打开原版 APP 继续使用”至少有三项独立证据：
+
+1. **服务端状态**：原版 APP 正常完成允许的单次初始化，Hook 只读观察到 `basic.utid`（并和官方 HOME UI 显示的 Trainer ID 一致）。
+2. **进程可接管**：Frida Host 断开连接后，原版 APP 继续在同一进程内显示菜单、允许正常操作。
+3. **冷启动持久性**：主动退出官方 APP，独立运行 `restart-smoke` 后再次进入 HOME，客户端可正常登录且显示同一个 ID；`restart-smoke` 只能自动确认启动命令发出，**同号和会话恢复仍需人工/后续合法的可验证采样**。
+
+单次非 UI **读取**与完全非 UI **注册**是两个不同任务。现有脚本只实现前者的待实机捕获管线，不伪称已经绕开初始化 UI、批量注册或达到目标后保存账号。
+
+## 6. 公开报告安全约定
+
+公开仓库可以保存 Hook、偏移、哈希、布尔目标匹配、测试失败原因、回调相对时间及充分脱敏的结构化报告。不能上传真实 Cookie、UUID、CID、Nintendo 令牌、原始 `basic.utid`、完整 logcat、认证包、设备唯一标识或可能包含这些信息的屏幕私有截图。即使不绑定 Nintendo Account，HOME 仍可能生成自身的登录会话和服务端资料。
