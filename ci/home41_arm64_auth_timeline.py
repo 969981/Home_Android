@@ -33,6 +33,8 @@ EVENT_NAMES = frozenset({
     "arm64_auth_observer_partial",
     "registration_request_serializer_entered",
     "registration_lng_cntry_packed_write_seen",
+    "registration_request_formatter_entered",
+    "registration_response_formatter_entered",
     "registration_packed_fields_invalid",
     "registration_packed_fields_unreadable",
     "registration_response_handler_entered",
@@ -52,6 +54,7 @@ CATEGORICAL_REASON = frozenset({
 })
 OBSERVER_NAMES = frozenset({
     "register_serialize", "register_packed_write", "register_callback",
+    "register_request_formatter", "register_response_formatter",
     "token_serialize", "token_callback", "login_serialize",
     "login_callback", "common_response", "set_basic"
 })
@@ -113,6 +116,8 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
     register_request = "registration_request_serializer_entered" in order
     register_fields = "registration_lng_cntry_packed_write_seen" in order
     register_callback = "registration_response_handler_entered" in order
+    register_formatter = "registration_request_formatter_entered" in order
+    response_formatter = "registration_response_formatter_entered" in order
     token_callback = "token_response_handler_entered" in order
     login_callback = "login_response_handler_entered" in order
     login_request = "login_request_serializer_entered" in order
@@ -130,6 +135,8 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
     for event in (
         "registration_request_serializer_entered",
         "registration_lng_cntry_packed_write_seen",
+        "registration_request_formatter_entered",
+        "registration_response_formatter_entered",
         "registration_response_handler_entered",
         "token_request_serializer_entered",
         "token_response_handler_entered",
@@ -156,6 +163,8 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
         "auth": {
             "registration_serializer_entered": register_request,
             "register_lng_cntry_packed_write_observed": register_fields,
+            "registration_request_formatter_entered": register_formatter,
+            "registration_response_formatter_entered": response_formatter,
             "register_response_handler_entered": register_callback,
             "token_response_handler_entered": token_callback,
             "login_serializer_entered": login_request,
