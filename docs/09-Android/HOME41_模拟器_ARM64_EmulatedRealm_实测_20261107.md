@@ -316,3 +316,29 @@ Python 运行器现在对 `--realm emulated` 进行特别预检：原始本地 A
 - 仍未点击【下一步】，没有账户创建、服务端回包和 UTID。
 
 此轮 Action `failure` 是刻意的严格 fail-closed：没有实际选月/日，就必须失败，不允许报告完整生日可视选择成功。最新重跑需检验 `month_dropdown_is_selected=true`、`day_dropdown_is_selected=true` 和截图中的“1999/4/5”。
+
+
+## 2026-11-08：三项可视 UI 选择全部通过，证明本地日期真正成立
+
+**真实 Actions [#42394020963](https://github.com/969981/Home_Android/actions/runs/42394020963) 最终结果 `success`**；Artifact `home41-arm64-emulated-realm-proof` ID **13582384557**。这一次不仅验证了 `inputedYear=1999,inputedMonth=4,inputedDay=5`，而且独立验证了三项原版 Unity UI 真正选择及可见文字变化：
+
+| 维度 | 年：1999 | 月：4 | 日：5 |
+| --- | --- | --- | --- |
+| 原生 OptionData 唯一索引 | 27 | 3 | 4 |
+| `CustomTMPDropdown.OnSelectItem` 已由原版 Show 线程调用并返回 | true | true | true |
+| 组件 `isSelected +0x160` | true | true | true |
+| `CustomTMPDropdown.m_Value +0x138` | 27 | 3 | 4 |
+| 控制器 `inputedYear/inputedMonth/inputedDay` | 1999 | 4 | 5 |
+| 各自标签 ROI 前后发生真实像素变化 | true | true | true |
+| 真实模拟器截图文字 | **1999** | **4** | **5** |
+
+截图证据 `16_full_date_form_after_back.png` → `17_native_year_OnSelectItem_after.png` → `19_native_month_OnSelectItem_after.png` → `20_native_day_OnSelectItem_after.png` → `04_final.png`。五张截图串联显示 UI 从【年／月／日】依次变化为【1999／月／日】、【1999／4／日】，最终为 **【1999／4／5】**，且没有返回空白或崩溃。
+
+本轮发现的一处独立自动化误判：原来的月/日页面识别会要求年份框文字区域 (.2,.29) 必须是浅色背景；而当原版 UI 选择显示“1999”后，此处像素变灰，造成旧规则 fail-closed。已改为**在已选年份页面的独立颜色签名**，并且原生 Frida RPC 继续核实控件地址、选择值及生命周期，避免把未知页面当生日页。
+
+**需要严格区分的验收边界**：
+- 已成功：原版 APK、Android 15 NativeBridge/Frida ARM64 realm、三组原版 UI 点击回调、年份月份日期的真实可视和内存一致性、原版进程仍存活、单元测试 20 项通过。
+- **尚未发生**：点击生日页面【下一步】、接受注册条款、创建官方测试账号、登陆、触发 `UDManager.SetBasic`、取得 `basic.utid` 或验证六位 ID。这些不可从当前 `exact_birthdate_selected=true` 推断。
+- 始终保留安全开关 `--probe-native-full-date-select`，若 ARM64 原版字段/截图校验不符不会自动执行 UI 选择，更不会点击任何网络相关按钮。
+
+根因可以确定为 **`CustomTMPDropdown.set_value` 不能替代原版 `OnSelectItem` UI 确认路径**。本次 A/B 用相同日期、相同原版组件和截图证明了这一点；未来不必再通过日期列表滚动或隐藏内存写入来解决年份可视问题。
