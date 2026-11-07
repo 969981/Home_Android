@@ -38,7 +38,9 @@ const RVA = Object.freeze({
   birthSetData: 0x1C80964,
   birthOnYearChange: 0x1C80EF8,
   birthOnMonthChange: 0x1C814C0,
-  birthOnDayChange: 0x1C8181C
+  birthOnDayChange: 0x1C8181C,
+  customDropdownShow: 0x1F14920,
+  customDropdownSetValue: 0x1F14014
 });
 const begun = Date.now();
 const counts = {
@@ -72,6 +74,10 @@ let nativeModuleReady = false;
 // yearDropdown +0x28, yearOptionDataList +0x40, inputedYear +0x58,
 // inputedMonth +0x5C, inputedDay +0x60.
 let birthViewPtr = null;
+let optInYearSetArmed = false;
+let localYearSetAttempted = false;
+let localYearSetterReturned = false;
+let localYearSetterFailure = false;
 
 function readYearOptionText(optionPtr) {
   // Actual HOME CustomTMPDropdown.OptionData.m_Text is a managed string
@@ -167,9 +173,32 @@ rpc.exports = {
       first_basic_seen: basicObserved,
       observed_common_basic_caller: fromCommonBasicCaller,
       serialized_lng_cntry_seen: packedLNG !== null && packedCNTRY !== null,
-      birthdate_ui: readBirthdateUIState(),
+      birthdate_ui: {
+        ...readBirthdateUIState(),
+        year_setter_opted_in: optInYearSetArmed,
+        year_setter_attempted: localYearSetAttempted,
+        year_setter_returned: localYearSetterReturned,
+        year_setter_failure: localYearSetterFailure
+      },
       counts: {...counts}
     };
+  },
+  // Explicit single local-form interaction. Never used by the ordinary
+  // read-only observer or without a native year-option scan and unselected UI.
+  // The actual call happens within HOME's original Unity Show callback.
+  armlocalyear1999() {
+    if (!hooksReady || Process.arch !== 'arm64' || optInYearSetArmed ||
+        localYearSetAttempted) return false;
+    const ui = readBirthdateUIState();
+    if (ui.year_option_count !== 127 || ui.year_1999_index !== 27 ||
+        !ui.first_option_is_2026 || !ui.year_dropdown_present ||
+        ui.inputed_year_in_supported_range || ui.exact_birthdate_selected) return false;
+    optInYearSetArmed = true;
+    emit('year_1999_local_setter_armed', {
+      original_dropdown_index_verified: true,
+      birthday_submission_attempted: false
+    });
+    return true;
   },
   // Only a local, explicitly opted-in Frida host may call this.
   // The Python host MUST NOT write this RPC result to Actions artifacts/logs.
@@ -307,6 +336,52 @@ function install(lib) {
       milestone('firstboot_birthdata_day_change_entered', {
         raw_day_value_redacted: true
       });
+    }
+  });
+  // Controlled, OPT-IN local UI selection. This is NOT a read-only
+  // operation, so it is inert until the host calls armlocalyear1999().
+  // Running on the same Unity main thread as the original Show() avoids
+  // invoking Unity setters from Frida's RPC worker thread.
+  const originalSetValue = new NativeFunction(
+    ptr(RVA.customDropdownSetValue), 'void', ['pointer', 'int']);
+  hook('birthyear_dropdown_show', RVA.customDropdownShow, {
+    onEnter(args) {
+      this.yearTarget = null;
+      if (!optInYearSetArmed || localYearSetAttempted ||
+          birthViewPtr === null) return;
+      try {
+        const yearDropdown = birthViewPtr.add(0x28).readPointer();
+        const ui = readBirthdateUIState();
+        if (!yearDropdown.isNull() && args[0].equals(yearDropdown) &&
+            ui.year_option_count === 127 && ui.year_1999_index === 27 &&
+            ui.first_option_is_2026 && !ui.inputed_year_in_supported_range) {
+          localYearSetAttempted = true;
+          this.yearTarget = yearDropdown;
+        }
+      } catch (_) {
+        localYearSetterFailure = true;
+      }
+    },
+    onLeave() {
+      if (this.yearTarget === null) return;
+      optInYearSetArmed = false;
+      try {
+        // Original game's own dropdown setter sends the normal value-change
+        // callback, which performs year parsing and local display updates.
+        originalSetValue(this.yearTarget, 27);
+        localYearSetterReturned = true;
+        const check = readBirthdateUIState();
+        emit('year_1999_local_setter_returned', {
+          original_setter_called: true,
+          year1999_controller_field_verified: check.inputed_year_equals_1999,
+          birthday_submission_attempted: false
+        });
+      } catch (_) {
+        localYearSetterFailure = true;
+        emit('year_1999_local_setter_failed', {
+          birthday_submission_attempted: false
+        });
+      }
     }
   });
   hook('set_basic', RVA.setBasic, {
