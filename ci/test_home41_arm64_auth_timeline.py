@@ -75,6 +75,8 @@ class AuthTimelineTests(unittest.TestCase):
             evt("registration_request_serializer_entered",100),
             evt("registration_lng_cntry_packed_write_seen",103,
                 values_redacted=True),
+            evt("registration_request_formatter_entered",115),
+            evt("registration_response_formatter_entered",444),
             evt("registration_response_handler_entered",450),
             evt("token_request_serializer_entered",480),
             evt("token_response_handler_entered",550),
@@ -89,11 +91,23 @@ class AuthTimelineTests(unittest.TestCase):
         self.assertEqual(result["status"],"basic_received_from_common_consumer")
         self.assertEqual(result["first_basic_minus_registration_callback_ms"],265)
         self.assertTrue(result["auth"]["register_lng_cntry_packed_write_observed"])
+        self.assertTrue(result["auth"]["registration_request_formatter_entered"])
+        self.assertTrue(result["auth"]["registration_response_formatter_entered"])
         self.assertTrue(result["auth"]["first_basic_caller_verified"])
         self.assertFalse(result["http_request_transmitted_verified"])
         self.assertFalse(result["http_response_source_endpoint_verified"])
         self.assertFalse(result["six_digit_id_equals_starter_ot_verified"])
         self.assertFalse(result["lng_cntry_enum_ui_mapping_verified"])
+
+    def test_response_formatter_alone_does_not_establish_basic_utid(self):
+        data=[evt("arm64_auth_observer_ready",10),
+              evt("registration_request_formatter_entered",20),
+              evt("registration_response_formatter_entered",30)]
+        out=module.analyze_events(data,ready=True,error=None)
+        self.assertTrue(out["auth"]["registration_response_formatter_entered"])
+        self.assertFalse(out["auth"]["first_basic_utid_observed"])
+        self.assertFalse(out["http_response_source_endpoint_verified"])
+        self.assertFalse(out["http_request_transmitted_verified"])
 
     def test_serializer_call_alone_never_claims_field_serialized(self):
         data=[evt("arm64_auth_observer_ready",5),
@@ -160,6 +174,8 @@ class AuthTimelineTests(unittest.TestCase):
         js=(CI/"home41_arm64_auth_timeline.js").read_text(encoding="utf-8")
         self.assertIn("0x1D334A4",js)
         self.assertIn("0x1D335C0",js)
+        self.assertIn("0x205AEF0",js)
+        self.assertIn("0x205DA3C",js)
         self.assertIn("0x1D2AFF0",js)
         self.assertIn("0x1D2BA68",js)
         self.assertIn("0x1D763D0",js)
