@@ -213,6 +213,11 @@ def run_acceptance(apk: Path, script_path: Path, serial: str | None,
     if not stop or stop.returncode != 0:
         report("acceptance_failed", phase=2, result="cold_force_stop_failed")
         return 3
+    if process_alive(serial):
+        # A successful shell exit is not proof that Android really stopped
+        # the earlier process. Refuse to claim a cold start if it persists.
+        report("acceptance_failed", phase=2, result="previous_home_process_still_alive")
+        return 3
 
     # Native callback must fire again in the restarted original app; compare
     # to the same *locally held* first UI number without logging either one.
