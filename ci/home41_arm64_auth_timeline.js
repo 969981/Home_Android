@@ -79,6 +79,59 @@ let localYearSetAttempted = false;
 let localYearSetterReturned = false;
 let localYearSetterFailure = false;
 
+function readShortOptionLabel(optionPtr) {
+  // Only tiny decimal month/day labels from the game's own OptionData.
+  // No arbitrary text, strings containing account details, or raw pointers
+  // ever leave this agent.
+  if (optionPtr.isNull()) return null;
+  try {
+    const str = optionPtr.add(0x10).readPointer();
+    if (str.isNull()) return null;
+    const len = str.add(0x10).readS32();
+    if (len < 1 || len > 4) return null;
+    const label = str.add(0x14).readUtf16String(len);
+    return /^(?:0?[1-9]|1[0-2]|[12][0-9]|3[01])(?:月|日)?$/.test(label) ?
+      label : null;
+  } catch (_) { return null; }
+}
+function describeSmallDropdown(view, dropdownOffset, listOffset, target, expectedCount) {
+  const unknown = {
+    dropdown_present: false, option_list_present: false,
+    option_count: null, target_index: null,
+    target_found_uniquely: false, value_index_equals_target: false,
+    target_option_text_verified: false
+  };
+  try {
+    const dropdown = view.add(dropdownOffset).readPointer();
+    const list = view.add(listOffset).readPointer();
+    if (dropdown.isNull() || list.isNull()) return unknown;
+    unknown.dropdown_present = true;
+    unknown.option_list_present = true;
+    const count = list.add(0x18).readS32();
+    if (count < 1 || count > 32) return unknown;
+    unknown.option_count = count;
+    const items = list.add(0x10).readPointer();
+    if (items.isNull()) return unknown;
+    let found = -1, matches = 0;
+    for (let i = 0; i < count; i++) {
+      const option = items.add(0x20 + i * 8).readPointer();
+      const label = readShortOptionLabel(option);
+      if (label !== null) {
+        const numeric = parseInt(label, 10);
+        if (numeric === target) { matches++; found = i; }
+      }
+    }
+    if (matches === 1 && count === expectedCount) {
+      unknown.target_index = found;
+      unknown.target_found_uniquely = true;
+      unknown.target_option_text_verified = true;
+      unknown.value_index_equals_target =
+        dropdown.add(0x138).readS32() === found;
+    }
+    return unknown;
+  } catch (_) { return unknown; }
+}
+
 function readYearOptionText(optionPtr) {
   // Actual HOME CustomTMPDropdown.OptionData.m_Text is a managed string
   // at +0x10. Only 4 ASCII digits are accepted; never expose other strings.
@@ -101,6 +154,20 @@ function readBirthdateUIState() {
     year_option_count: null,
     year_1999_index: null,
     first_option_is_2026: false,
+    year_dropdown_value_index: null,
+    year_dropdown_value_equals_1999_option: false,
+    month_dropdown: {
+      dropdown_present: false, option_list_present: false,
+      option_count: null, target_index: null,
+      target_found_uniquely: false, value_index_equals_target: false,
+      target_option_text_verified: false
+    },
+    day_dropdown: {
+      dropdown_present: false, option_list_present: false,
+      option_count: null, target_index: null,
+      target_found_uniquely: false, value_index_equals_target: false,
+      target_option_text_verified: false
+    },
     inputed_year_in_supported_range: false,
     inputed_year_equals_1999: false,
     inputed_month_in_range: false,
@@ -114,6 +181,12 @@ function readBirthdateUIState() {
     const year = birthViewPtr.add(0x58).readS32();
     const month = birthViewPtr.add(0x5C).readS32();
     const day = birthViewPtr.add(0x60).readS32();
+    const monthStatus = describeSmallDropdown(
+      birthViewPtr, 0x30, 0x48, 4, 12);
+    const dayStatus = describeSmallDropdown(
+      birthViewPtr, 0x38, 0x50, 5, 31);
+    const yearValue = yearDropdown.isNull() ? null :
+      yearDropdown.add(0x138).readS32();
     let count = null;
     let targetIndex = null;
     let firstIs2026 = false;
@@ -141,6 +214,12 @@ function readBirthdateUIState() {
       year_option_count: count,
       year_1999_index: targetIndex,
       first_option_is_2026: firstIs2026,
+      year_dropdown_value_index: yearValue >= -1 && yearValue <= 126 ?
+          yearValue : null,
+      year_dropdown_value_equals_1999_option: targetIndex !== null &&
+          yearValue === targetIndex,
+      month_dropdown: monthStatus,
+      day_dropdown: dayStatus,
       inputed_year_in_supported_range: year >= 1900 && year <= 2100,
       inputed_year_equals_1999: year === 1999,
       inputed_month_in_range: month >= 1 && month <= 12,
