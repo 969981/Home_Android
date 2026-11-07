@@ -397,7 +397,9 @@ def run(apk: Path, out: Path, settle: int = 25,
             "day_arm_succeeded": False,
             "day_popup_tapped": False,
             "day_popup_screenshot_saved": False,
-            "day_form_after_back_saved": False
+            "day_form_after_back_saved": False,
+            "year_reopened_after_full_internal_dob": False,
+            "year_reopen_screenshot_saved": False
         },
         "account_delete_attempted": False,
         "first_basic_utid_status": "not_observed",
@@ -573,6 +575,25 @@ def run(apk: Path, out: Path, settle: int = 25,
                                     time.sleep(2)
                                     mm["day_form_after_back_saved"] = bool(
                                         screenshot(out,"16_full_date_form_after_back.png"))
+                                    # Re-open the original year dropdown, after
+                                    # native m_Value has become 27. Observe
+                                    # whether UI scroller centers on 1999.
+                                    # Never select another year or press NEXT.
+                                    if mm["day_form_after_back_saved"]:
+                                        year_again=screenshot(out,
+                                            "16b_year_before_reopen.png")
+                                        if year_again and match_known_ui(
+                                                year_again,"birthday_year_dropdown"):
+                                            mm["year_reopened_after_full_internal_dob"] = click_if_known(
+                                                year_again,"birthday_year_dropdown")
+                                        if mm["year_reopened_after_full_internal_dob"]:
+                                            time.sleep(3)
+                                            mm["year_reopen_screenshot_saved"] = bool(
+                                                screenshot(out,"17_year_reopened_index27.png"))
+                                            adb("shell","input","keyevent","KEYCODE_BACK",
+                                                timeout=12)
+                                            time.sleep(2)
+                                            screenshot(out,"18_year_reopen_closed.png")
                 if probe_year_dpad and first_popup and match_known_ui(
                         first_popup,"year_popup_open") is not None:
                     # One non-activating keyboard navigation key, NEVER Enter,
