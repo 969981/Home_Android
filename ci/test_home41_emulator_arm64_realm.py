@@ -123,6 +123,52 @@ class ARM64RealmContractTests(unittest.TestCase):
             self.assertIsNone(mod.sanitize_birth_ui(
                 {"year_1999_index":val})["year_1999_index"])
 
+    def test_month_day_native_item_select_requires_explicit_full_date_mode(self):
+        monitor=mod.ARM64RealmStageMonitor(
+            Path("unused"),Path("unused"),Path("unused"))
+        monitor.arm64_realm_status="emulated_realm_attached"
+        monitor.arm64_agent=SimpleNamespace(exports_sync=SimpleNamespace(
+            armnativemonthitemselect=lambda: (_ for _ in ()).throw(
+                AssertionError("month must stay inert")),
+            armnativedayitemselect=lambda: (_ for _ in ()).throw(
+                AssertionError("day must stay inert"))))
+        self.assertFalse(monitor.arm_native_month_item_select())
+        self.assertFalse(monitor.arm_native_day_item_select())
+
+    def test_full_date_native_selection_rpc_is_guarded(self):
+        events=[]
+        monitor=mod.ARM64RealmStageMonitor(
+            Path("unused"),Path("unused"),Path("unused"),
+            probe_native_year_select=True,
+            probe_native_full_date_select=True)
+        monitor.arm64_realm_status="emulated_realm_attached"
+        monitor.arm64_agent=SimpleNamespace(exports_sync=SimpleNamespace(
+            armnativemonthitemselect=lambda: events.append("month") or True,
+            armnativedayitemselect=lambda: events.append("day") or True))
+        self.assertTrue(monitor.arm_native_month_item_select())
+        self.assertTrue(monitor.arm_native_day_item_select())
+        self.assertEqual(events,["month","day"])
+        self.assertEqual(monitor.native_month_select_arm_result,
+                         "guarded_native_month_onselect_armed")
+        self.assertEqual(monitor.native_day_select_arm_result,
+                         "guarded_native_day_onselect_armed")
+
+    def test_original_month_day_selected_flags_are_reduced_to_booleans(self):
+        payload={"native_month_item_select_attempted":True,
+                 "native_month_item_select_returned":True,
+                 "native_month_item_select_confirmed":True,
+                 "native_day_item_select_attempted":True,
+                 "native_day_item_select_returned":True,
+                 "native_day_item_select_confirmed":True,
+                 "month_dropdown_is_selected":True,
+                 "day_dropdown_is_selected":True,
+                 "raw_http":"NEVER_PUBLISH",
+                 "person_name":"NEVER_PUBLISH"}
+        clean=mod.sanitize_birth_ui(payload)
+        self.assertTrue(clean["native_month_item_select_confirmed"])
+        self.assertTrue(clean["native_day_item_select_confirmed"])
+        self.assertNotIn("NEVER_PUBLISH",repr(clean))
+
     def test_native_onselect_item_is_inert_without_opt_in(self):
         monitor=mod.ARM64RealmStageMonitor(
             Path("unused"),Path("unused"),Path("unused"))
