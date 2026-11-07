@@ -41,6 +41,43 @@ class ARM64RealmContractTests(unittest.TestCase):
         self.assertNotIn("my-secret", str(obj))
         self.assertFalse(obj["utid_raw_or_candidate_logged"])
 
+    def test_birthdate_ui_snapshot_strips_raw_values_and_pointers(self):
+        value={
+            "controller_seen":True, "year_dropdown_present":True,
+            "year_option_list_present":True,
+            "year_option_count":127,
+            "inputed_year_in_supported_range":True,
+            "inputed_year_equals_1999":False,
+            "inputed_month_in_range":False, "inputed_day_in_range":False,
+            "exact_birthdate_selected":False,
+            "inputed_year":2019,"inputed_month":4,"inputed_day":5,
+            "memory_pointer":"0xDEADBEEF",
+            "utid":"SECRET",
+        }
+        result=mod.sanitized_arm64_snapshot({
+            "birthdate_ui":value,
+            "native_arm64":True, "hooks_ready":True,
+            "counts":{"firstboot_birthdata_setdata_entered":1,
+                      "firstboot_birthdata_year_change_entered":3,
+                      "account_password":"secret"}
+        })
+        state=result["birthdate_ui"]
+        self.assertTrue(state["controller_seen"])
+        self.assertEqual(state["year_option_count"],127)
+        self.assertFalse(state["inputed_year_equals_1999"])
+        self.assertNotIn("2019",repr(result))
+        self.assertNotIn("0xDEADBEEF",repr(result))
+        self.assertNotIn("SECRET",repr(result))
+        self.assertNotIn("password",repr(result))
+        self.assertEqual(result["counts"]["firstboot_birthdata_setdata_entered"],1)
+
+    def test_birthdate_ui_invalid_list_size_is_not_reported(self):
+        for val in (501, -1, "127", True):
+            with self.subTest(val=val):
+                state=mod.sanitize_birth_ui({"year_option_count":val})
+                self.assertIsNone(state["year_option_count"])
+                self.assertFalse(state["exact_birthdate_selected"])
+
     def test_non_dict_snapshot_fails_closed(self):
         self.assertEqual(mod.sanitized_arm64_snapshot(None),
                          {"status":"invalid_snapshot"})
