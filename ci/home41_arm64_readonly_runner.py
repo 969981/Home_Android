@@ -102,7 +102,7 @@ def preflight(apk: Path, serial: str | None = None) -> dict:
 
 
 def prepare_script(path: Path, target_tid: str) -> str:
-    if not re.fullmatch(r"\d{6}", target_tid):
+    if not re.fullmatch(r"[0-9]{6}", target_tid):
         raise ValueError("Target must be exactly six ASCII digits")
     source = path.read_text(encoding="utf-8")
     marker = "const EXPECTED_TARGET = '888888';"
