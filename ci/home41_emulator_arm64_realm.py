@@ -40,6 +40,8 @@ _ALLOWED_AGENT_EVENTS = frozenset({
     "firstboot_birthdata_year_change_entered",
     "firstboot_birthdata_month_change_entered",
     "firstboot_birthdata_day_change_entered",
+    "firstboot_year_scroll_open_entered",
+    "firstboot_year_item_selection_entered",
     "year_1999_local_setter_armed",
     "year_1999_local_setter_returned",
     "year_1999_local_setter_failed",
@@ -89,6 +91,20 @@ def sanitize_birth_ui(raw: object) -> dict:
         "year_setter_attempted":src.get("year_setter_attempted") is True,
         "year_setter_returned":src.get("year_setter_returned") is True,
         "year_setter_failure":src.get("year_setter_failure") is True,
+        "year_scroll_open_input_index": (
+            src.get("year_scroll_open_input_index")
+            if type(src.get("year_scroll_open_input_index")) is int
+            and -1<=src["year_scroll_open_input_index"]<=126 else None),
+        "year_scroll_open_input_equals_1999": (
+            src.get("year_scroll_open_input_equals_1999") is True),
+        "year_item_selection_count": (
+            src.get("year_item_selection_count")
+            if type(src.get("year_item_selection_count")) is int
+            and 0<=src["year_item_selection_count"]<=100 else None),
+        "year_item_selected_index": (
+            src.get("year_item_selected_index")
+            if type(src.get("year_item_selected_index")) is int
+            and 0<=src["year_item_selected_index"]<=126 else None),
         "year_option_count": n if type(n) is int and 0<=n<=500 else None,
         "year_1999_index": (
             src.get("year_1999_index")
