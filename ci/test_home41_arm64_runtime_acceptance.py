@@ -148,6 +148,29 @@ class NativeRuntimeAcceptanceFixtures(unittest.TestCase):
         self.assertEqual(dev.spawn_count,2)
         self.assertNotIn("REAL_DEVICE_THREE_GATES_PASSED",output)
 
+    def test_force_stop_without_real_process_exit_is_not_cold_restart(self):
+        dev=FakeDevice(["654321"])
+        frida=SimpleNamespace(get_usb_device=lambda timeout:dev)
+        output=io.StringIO()
+        answers=iter(["yes","yes"])
+        with patch.object(mod.core,"preflight",return_value={
+                     "result":"native_arm64_original_apk_preflight_ok"}), \
+             patch.object(mod.core,"installed_apk_integrity",
+                          return_value="installed_apk_hash_verified"), \
+             patch.object(mod.core,"prepare_script",return_value="stub Frida JS"), \
+             patch.object(mod,"process_alive",return_value=True), \
+             patch.object(mod.core,"adb",return_value=SimpleNamespace(
+                          returncode=0,stdout="")), \
+             patch.dict(sys.modules,{"frida":frida}),redirect_stdout(output):
+            result=mod.run_acceptance(
+                Path("unused.apk"),Path("unused.js"),None,1,"888888",
+                hidden_input=lambda text:"654321",
+                input_func=lambda text:next(answers))
+        self.assertEqual(result,3)
+        self.assertEqual(dev.spawn_count,1)
+        self.assertIn("previous_home_process_still_alive",output.getvalue())
+        self.assertNotIn("REAL_DEVICE_THREE_GATES_PASSED",output.getvalue())
+
     def test_hidden_display_id_validation(self):
         self.assertEqual(mod.visible_id(lambda t:"001234"),"001234")
         self.assertIsNone(mod.visible_id(lambda t:"１２３４５６"))
