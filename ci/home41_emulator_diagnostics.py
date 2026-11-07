@@ -159,6 +159,15 @@ def match_known_ui(data: bytes, stage: str):
                 near(at(.4, .34), (240, 30, 30), 18) and
                 near(at(.7, .95), (255, 173, 4), 15)):
             return (int(w * .285), int(h * .287))
+    elif stage == "birthday_next_complete":
+        # Only matching known age page after independent ARM64 verification
+        # of 1999-04-05 and all three native isSelected flags. Only one tap.
+        if (near(at(.5,.14),(38,179,151),12) and
+                near(at(.5,.24),(198,242,161),14) and
+                near(at(.2,.29),(142,142,142),18) and
+                near(at(.4,.34),(240,30,30),18) and
+                near(at(.7,.95),(255,173,4),15)):
+            return (int(w*.5),int(h*.95))
     elif stage in ("birthday_month_native", "birthday_day_native"):
         # After original year OnSelectItem, 1999 is VISIBLY rendered:
         # (.2,.29) is now gray text instead of the white empty caption.
@@ -414,7 +423,8 @@ def run(apk: Path, out: Path, settle: int = 25,
         select_local_month_day: bool = False,
         probe_year_touch_scroll: bool = False,
         probe_native_year_select: bool = False,
-        probe_native_full_date_select: bool = False) -> dict:
+        probe_native_full_date_select: bool = False,
+        advance_birthday_once: bool = False) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     report = {
         "version": "4.1.0", "device": "disposable_github_actions_avd",
@@ -436,6 +446,12 @@ def run(apk: Path, out: Path, settle: int = 25,
         "year1999_local_setter_arm_requested": False,
         "year1999_local_setter_screenshot_saved": False,
         "birthday_submitted": False,
+        "birthday_next_requested": advance_birthday_once,
+        "birthday_native_preflight_passed": False,
+        "birthday_next_tapped": False,
+        "birthday_server_submission_verified": False,
+        "post_next_screen_changed": False,
+        "post_next_screenshot_raw_saved": False,
         "local_month_day_probe": {
             "requested": select_local_month_day,
             "month_arm_succeeded": False,
@@ -796,8 +812,41 @@ def run(apk: Path, out: Path, settle: int = 25,
                             except (OSError,ValueError):
                                 report["year_keyboard_image_changed"] = False
         time.sleep(settle)
-        report["final_screenshot_saved"] = bool(
-            screenshot(out, "04_final.png"))
+        final_png=screenshot(out, "04_final.png")
+        report["final_screenshot_saved"] = bool(final_png)
+        if (advance_birthday_once and probe_native_full_date_select and
+                observer is not None and final_png and
+                report["local_month_day_probe"].get("year_caption_roi_changed") and
+                report["local_month_day_probe"].get("month_caption_roi_changed") and
+                report["local_month_day_probe"].get("day_caption_roi_changed")):
+            report["birthday_native_preflight_passed"] = bool(
+                hasattr(observer, "verify_full_visible_birthdate_native") and
+                observer.verify_full_visible_birthdate_native())
+            if report["birthday_native_preflight_passed"] and match_known_ui(
+                    final_png, "birthday_next_complete") is not None:
+                # Exactly ONE official age-page NEXT. Never interact with
+                # any further screen, ToS, Nintendo link or registration.
+                report["birthday_next_tapped"] = click_if_known(
+                    final_png, "birthday_next_complete")
+                if report["birthday_next_tapped"]:
+                    time.sleep(12)
+                    # This screen may contain a new account or response data.
+                    # Inspect ONLY in memory. DO NOT save raw PNG or logcat.
+                    after=adb("exec-out","screencap","-p",timeout=30,binary=True)
+                    frame=after.stdout if (
+                        after and after.returncode==0 and isinstance(
+                            after.stdout,bytes) and after.stdout.startswith(
+                            PNG_MAGIC)) else b""
+                    if frame:
+                        try:
+                            from PIL import Image, ImageChops
+                            with Image.open(io.BytesIO(final_png)) as aa, Image.open(io.BytesIO(frame)) as bb:
+                                before,after_image=aa.convert("RGB"),bb.convert("RGB")
+                                report["post_next_screen_changed"] = bool(
+                                    before.size==after_image.size and
+                                    ImageChops.difference(before,after_image).getbbox())
+                        except (OSError,ValueError):
+                            pass
         report["process_at_end"] = process_alive()
         report["diagnostics"] = redacted_system_diagnostics()
         report["ui_navigation_status"] = (
@@ -820,6 +869,12 @@ def run(apk: Path, out: Path, settle: int = 25,
         if observer is not None:
             try:
                 report["stage_monitor"] = observer.finish()
+                arm = report["stage_monitor"].get("arm64_emulated_realm", {})
+                snap = arm.get("snapshot", {})
+                if snap.get("first_basic_seen") is True and (
+                        snap.get("observed_common_basic_caller") is True):
+                    report["first_basic_utid_status"] = (
+                        "observed_in_common_basic_consumer_unverified_ui_identity")
             except Exception as e:
                 report["stage_monitor"] = {
                     "status": "observer_teardown_failed",
