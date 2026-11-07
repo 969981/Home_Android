@@ -28,6 +28,24 @@ class ProbeTests(unittest.TestCase):
         self.assertIsNone(probe.match_known_ui(buf.getvalue(), "registration"))
         self.assertIsNone(probe.match_known_ui(buf.getvalue(), "delete"))
 
+    def test_date_caption_roi_change_only_detects_target_field(self):
+        from PIL import Image, ImageDraw
+        base=Image.new("RGB",(1080,2340),(245,246,242))
+        changed=base.copy()
+        d=ImageDraw.Draw(changed)
+        d.rectangle((185,655,235,710),fill=(20,20,20))
+        def png(image):
+            buffer=io.BytesIO()
+            image.save(buffer,format="PNG")
+            return buffer.getvalue()
+        before,after=png(base),png(changed)
+        self.assertTrue(probe.caption_visual_changed(before,after,"year"))
+        self.assertFalse(probe.caption_visual_changed(before,after,"month"))
+        self.assertFalse(probe.caption_visual_changed(before,after,"day"))
+        self.assertFalse(probe.caption_visual_changed(before,before,"year"))
+        self.assertFalse(probe.caption_visual_changed(before,after,"terms"))
+        self.assertFalse(probe.caption_visual_changed(b"no png",after,"year"))
+
     def test_native_sha_check_fails_closed_on_fixture(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "fixture.apk"
