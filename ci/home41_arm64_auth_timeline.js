@@ -86,6 +86,11 @@ let yearScrollOpenInputIndex = null;
 let yearScrollOpenInputEquals1999 = false;
 let yearItemSelectedIndex = null;
 let yearItemSelectionCount = 0;
+let optInNativeYearItemSelect = false;
+let nativeYearItemSelectAttempted = false;
+let nativeYearItemSelectReturned = false;
+let nativeYearItemSelectConfirmed = false;
+let nativeYearItemSelectFailure = false;
 let optInMonthSetArmed = false, optInDaySetArmed = false;
 let localMonthSetAttempted = false, localDaySetAttempted = false;
 let localMonthSetterReturned = false, localDaySetterReturned = false;
@@ -168,6 +173,9 @@ function readBirthdateUIState() {
     first_option_is_2026: false,
     year_dropdown_value_index: null,
     year_dropdown_value_equals_1999_option: false,
+    year_dropdown_is_selected: null,
+    month_dropdown_is_selected: null,
+    day_dropdown_is_selected: null,
     month_dropdown: {
       dropdown_present: false, option_list_present: false,
       option_count: null, target_index: null,
@@ -202,6 +210,14 @@ function readBirthdateUIState() {
       birthViewPtr, 0x38, 0x50, 5, month === 4 ? 30 : 31);
     const yearValue = yearDropdown.isNull() ? null :
       yearDropdown.add(0x138).readS32();
+    const yearSelected = yearDropdown.isNull() ? null :
+      yearDropdown.add(0x160).readU8() === 1;
+    const monthDropdown = birthViewPtr.add(0x30).readPointer();
+    const dayDropdown = birthViewPtr.add(0x38).readPointer();
+    const monthSelected = monthDropdown.isNull() ? null :
+      monthDropdown.add(0x160).readU8() === 1;
+    const daySelected = dayDropdown.isNull() ? null :
+      dayDropdown.add(0x160).readU8() === 1;
     let count = null;
     let targetIndex = null;
     let firstIs2026 = false;
@@ -233,6 +249,9 @@ function readBirthdateUIState() {
           yearValue : null,
       year_dropdown_value_equals_1999_option: targetIndex !== null &&
           yearValue === targetIndex,
+      year_dropdown_is_selected: yearSelected,
+      month_dropdown_is_selected: monthSelected,
+      day_dropdown_is_selected: daySelected,
       month_dropdown: monthStatus,
       day_dropdown: dayStatus,
       inputed_year_in_supported_range: year >= 1900 && year <= 2100,
@@ -279,6 +298,10 @@ rpc.exports = {
         year_scroll_open_input_equals_1999: yearScrollOpenInputEquals1999,
         year_item_selection_count: yearItemSelectionCount,
         year_item_selected_index: yearItemSelectedIndex,
+        native_year_item_select_attempted: nativeYearItemSelectAttempted,
+        native_year_item_select_returned: nativeYearItemSelectReturned,
+        native_year_item_select_confirmed: nativeYearItemSelectConfirmed,
+        native_year_item_select_failure: nativeYearItemSelectFailure,
         month_setter_attempted: localMonthSetAttempted,
         month_setter_returned: localMonthSetterReturned,
         month_setter_failure: localMonthSetterFailure,
@@ -302,6 +325,28 @@ rpc.exports = {
     optInYearSetArmed = true;
     emit('year_1999_local_setter_armed', {
       original_dropdown_index_verified: true,
+      birthday_submission_attempted: false
+    });
+    return true;
+  },
+  armnativeyearitemselect() {
+    // One controlled A/B experiment: reproduce the ORIGINAL OnSelectItem
+    // pipeline that sets isSelected and calls SetValue+Hide, not just SetValue.
+    // Only permitted when 1999-04-05 is already internally selected.
+    if (!hooksReady || Process.arch !== 'arm64' ||
+        optInNativeYearItemSelect || nativeYearItemSelectAttempted ||
+        optInYearSetArmed || optInMonthSetArmed || optInDaySetArmed) return false;
+    const ui = readBirthdateUIState();
+    if (!ui.exact_birthdate_selected ||
+        !ui.year_dropdown_value_equals_1999_option ||
+        ui.year_dropdown_is_selected !== false ||
+        ui.year_1999_index !== 27 ||
+        !ui.first_option_is_2026 ||
+        ui.month_dropdown.value_index_equals_target !== true ||
+        ui.day_dropdown.value_index_equals_target !== true) return false;
+    optInNativeYearItemSelect = true;
+    emit('year_native_item_select_armed', {
+      original_onselect_pipeline: true,
       birthday_submission_attempted: false
     });
     return true;
@@ -488,6 +533,8 @@ function install(lib) {
   // invoking Unity setters from Frida's RPC worker thread.
   const originalSetValue = new NativeFunction(
     ptr(RVA.customDropdownSetValue), 'void', ['pointer', 'int']);
+  const originalOnSelectItem = new NativeFunction(
+    ptr(RVA.customDropdownOnSelectItem), 'void', ['pointer', 'int']);
   // Native UI scroll lifecycle: observe the *actual Open(int value)* input.
   // Being open at 2026 with m_Value 27 is not itself proof of an Open bug:
   // here we distinguish what the original ScrollList receives.
@@ -536,13 +583,22 @@ function install(lib) {
       this.yearTarget = null;
       this.monthTarget = null;
       this.dayTarget = null;
+      this.nativeYearItemSelectTarget = null;
       if (birthViewPtr === null) return;
       try {
         const ui = readBirthdateUIState();
         const yearDropdown = birthViewPtr.add(0x28).readPointer();
         const monthDropdown = birthViewPtr.add(0x30).readPointer();
         const dayDropdown = birthViewPtr.add(0x38).readPointer();
-        if (optInYearSetArmed && !localYearSetAttempted &&
+        if (optInNativeYearItemSelect && !nativeYearItemSelectAttempted &&
+            !yearDropdown.isNull() && args[0].equals(yearDropdown) &&
+            ui.exact_birthdate_selected &&
+            ui.year_dropdown_value_equals_1999_option &&
+            ui.year_dropdown_is_selected === false &&
+            ui.year_1999_index === 27) {
+          nativeYearItemSelectAttempted = true;
+          this.nativeYearItemSelectTarget = yearDropdown;
+        } else if (optInYearSetArmed && !localYearSetAttempted &&
             !yearDropdown.isNull() && args[0].equals(yearDropdown) &&
             ui.year_option_count === 127 && ui.year_1999_index === 27 &&
             ui.first_option_is_2026 && !ui.inputed_year_in_supported_range) {
@@ -577,6 +633,31 @@ function install(lib) {
       }
     },
     onLeave() {
+      if (this.nativeYearItemSelectTarget !== null) {
+        optInNativeYearItemSelect = false;
+        try {
+          // The real UI selection method sets isSelected first, then
+          // SetValue(index,true), then Hide. It is called on Unity's
+          // original Show thread; no separate RPC-worker Unity call.
+          originalOnSelectItem(this.nativeYearItemSelectTarget, 27);
+          nativeYearItemSelectReturned = true;
+          const ui = readBirthdateUIState();
+          nativeYearItemSelectConfirmed =
+            ui.year_dropdown_is_selected === true &&
+            ui.year_dropdown_value_equals_1999_option &&
+            ui.inputed_year_equals_1999;
+          emit('year_native_item_select_returned', {
+            actual_native_ui_method_called: true,
+            original_is_selected_verified: nativeYearItemSelectConfirmed,
+            birthday_submission_attempted: false
+          });
+        } catch (_) {
+          nativeYearItemSelectFailure = true;
+          emit('year_native_item_select_failed', {
+            birthday_submission_attempted: false
+          });
+        }
+      }
       for (const item of [
         {target: this.yearTarget, index: 27, field: 'inputed_year_equals_1999', label: 'year_1999'},
         {target: this.monthTarget, index: 3, field: 'inputed_month_equals_4', label: 'month_4'},
