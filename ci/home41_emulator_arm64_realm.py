@@ -185,10 +185,13 @@ def sanitized_arm64_snapshot(raw: object) -> dict:
 class ARM64RealmStageMonitor(StageMonitor):
     def __init__(self, server: Path, network_script: Path, arm64_script: Path,
                  select_year_1999: bool=False,
-                 select_month_day: bool=False):
+                 select_month_day: bool=False,
+                 probe_native_year_select: bool=False):
         super().__init__(server, network_script)
         self.select_year_1999 = select_year_1999
         self.select_month_day = select_month_day
+        self.probe_native_year_select = probe_native_year_select
+        self.native_year_select_arm_result = "not_attempted"
         self.local_month_arm_result = "not_attempted"
         self.local_day_arm_result = "not_attempted"
         self.local_year_set_arm_result = "not_attempted"
@@ -253,6 +256,22 @@ class ARM64RealmStageMonitor(StageMonitor):
             self.local_year_set_arm_result = "frida_rpc_error_" + type(err).__name__
             return False
 
+    def arm_native_year_item_select(self) -> bool:
+        if (not self.probe_native_year_select or not self.arm64_agent or
+                self.arm64_realm_status != "emulated_realm_attached"):
+            self.native_year_select_arm_result = "not_eligible"
+            return False
+        try:
+            allowed = self.arm64_agent.exports_sync.armnativeyearitemselect()
+            self.native_year_select_arm_result = (
+                "guarded_native_onselect_armed" if allowed
+                else "native_onselect_preflight_rejected")
+            return allowed is True
+        except Exception as err:
+            self.native_year_select_arm_result = (
+                "frida_rpc_error_" + type(err).__name__)
+            return False
+
     def arm_local_month_4(self) -> bool:
         if (not self.select_month_day or not self.arm64_agent or
                 self.arm64_realm_status != "emulated_realm_attached"):
@@ -290,6 +309,7 @@ class ARM64RealmStageMonitor(StageMonitor):
             "agent_script_error": self.arm64_script_error,
             "events": list(self.arm64_events),
             "local_year_set_arm_result": self.local_year_set_arm_result,
+            "native_year_select_arm_result": self.native_year_select_arm_result,
             "local_month_arm_result": self.local_month_arm_result,
             "local_day_arm_result": self.local_day_arm_result,
             "raw_utid_saved": False,
@@ -326,6 +346,8 @@ def main() -> int:
                         help="OPT IN: one original Unity dropdown setter call; no date submission")
     parser.add_argument("--select-local-month-day", action="store_true",
                         help="OPT IN: original Unity month/day setters after verified 1999; no form submission")
+    parser.add_argument("--probe-native-year-select", action="store_true",
+                        help="Opt in: call original OnSelectItem(27) on Unity thread after fully verified internal date")
     parser.add_argument("--probe-year-touch-scroll", action="store_true",
                         help="Up to four bounded touch drags only within the opened original year menu")
     parser.add_argument("--probe-birthday-year", action="store_true",
@@ -336,7 +358,8 @@ def main() -> int:
     observer = ARM64RealmStageMonitor(
         args.server, args.network_script, args.arm64_script,
         select_year_1999=args.select_local_year_1999,
-        select_month_day=args.select_local_month_day)
+        select_month_day=args.select_local_month_day,
+        probe_native_year_select=args.probe_native_year_select)
     report = diag.run(
         args.apk, args.output, settle=max(3,min(60,args.settle_seconds)),
         observer=observer, select_china_mainland=True,
@@ -344,7 +367,8 @@ def main() -> int:
         probe_year_dpad=args.probe_year_dpad,
         select_local_year_1999=args.select_local_year_1999,
         select_local_month_day=args.select_local_month_day,
-        probe_year_touch_scroll=args.probe_year_touch_scroll)
+        probe_year_touch_scroll=args.probe_year_touch_scroll,
+        probe_native_year_select=args.probe_native_year_select)
     obs = report.get("stage_monitor", {})
     arm = obs.get("arm64_emulated_realm", {})
     snapshot = arm.get("snapshot", {})
@@ -366,6 +390,7 @@ def main() -> int:
             "local_year_set_arm_result"),
         "local_month_setter_armed": arm.get("local_month_arm_result"),
         "local_day_setter_armed": arm.get("local_day_arm_result"),
+        "native_year_select_arm_result": arm.get("native_year_select_arm_result"),
         "local_month_day_probe": report.get("local_month_day_probe"),
         "frida_x64_status": obs.get("status"),
         "arm64_emulated_status": arm.get("status"),
