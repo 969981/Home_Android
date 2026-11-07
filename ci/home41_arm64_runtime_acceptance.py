@@ -67,7 +67,8 @@ def visible_id(hidden_input=getpass.getpass) -> str | None:
 
 
 def capture_once(device, prepared_script: str, first_ui_id: str | None,
-                 timeout: int, phase: int, hidden_input=getpass.getpass) -> tuple[dict, str | None]:
+                 timeout: int, phase: int, serial: str | None = None,
+                 hidden_input=getpass.getpass) -> tuple[dict, str | None]:
     got = threading.Event()
     detached_unexpectedly = threading.Event()
     state = {
@@ -161,7 +162,7 @@ def capture_once(device, prepared_script: str, first_ui_id: str | None,
                 session.detach()  # Never kill HOME or discard its data.
             except Exception:
                 pass
-        state["process_alive"] = process_alive(None if not hasattr(device, "_home_serial") else device._home_serial)
+        state["process_alive"] = process_alive(serial)
         report("phase_complete", **state)
 
 
@@ -188,7 +189,7 @@ def run_acceptance(apk: Path, script_path: Path, serial: str | None,
 
     # First phase: initial, authorized normal HOME initialization.
     first, original_display_id = capture_once(
-        device, source, None, timeout, 1, hidden_input=hidden_input)
+        device, source, None, timeout, 1, serial=serial, hidden_input=hidden_input)
     first["process_alive"] = process_alive(serial)
     if first["result"] != "first_basic_matches_displayed_id" or not first["process_alive"]:
         report("acceptance_failed", phase=1, result=first["result"],
@@ -216,7 +217,7 @@ def run_acceptance(apk: Path, script_path: Path, serial: str | None,
     # Native callback must fire again in the restarted original app; compare
     # to the same *locally held* first UI number without logging either one.
     second, _ = capture_once(device, source, original_display_id, timeout, 2,
-                             hidden_input=hidden_input)
+                             serial=serial, hidden_input=hidden_input)
     second["process_alive"] = process_alive(serial)
     if second["result"] != "first_basic_matches_displayed_id" or not second["process_alive"]:
         report("acceptance_failed", phase=2, result=second["result"],
