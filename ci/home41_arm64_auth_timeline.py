@@ -238,7 +238,7 @@ def preflight_for_realm(apk: Path, serial: str | None, realm: str) -> dict:
         return {"result": "native_bridge_arm_emulation_not_configured"}
     installed = core.adb(["shell", "dumpsys", "package", core.PACKAGE], serial)
     from_text = installed.stdout if installed and installed.returncode == 0 else ""
-    if "81" not in re.findall(r"\\bversionCode=(\\d+)\\b", from_text or ""):
+    if "81" not in re.findall(r"\bversionCode=(\d+)\b", from_text or ""):
         return {"result": "wrong_or_missing_installed_home_version"}
     return {
         "result": "emulated_arm64_guest_preflight_ok",
