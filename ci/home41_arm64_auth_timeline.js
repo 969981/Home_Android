@@ -34,7 +34,11 @@ const RVA = Object.freeze({
   loginCallback: 0x1D3C020,
   commonResponseHook: 0x1D2AFF0,
   setBasic: 0x1D763D0,
-  commonBasicReturn: 0x1D2BA68
+  commonBasicReturn: 0x1D2BA68,
+  birthSetData: 0x1C80964,
+  birthOnYearChange: 0x1C80EF8,
+  birthOnMonthChange: 0x1C814C0,
+  birthOnDayChange: 0x1C8181C
 });
 const begun = Date.now();
 const counts = {
@@ -48,7 +52,11 @@ const counts = {
   login_request_serializer_entered: 0,
   login_response_handler_entered: 0,
   common_response_handler_entered: 0,
-  first_basic_utid_observed: 0
+  first_basic_utid_observed: 0,
+  firstboot_birthdata_setdata_entered: 0,
+  firstboot_birthdata_year_change_entered: 0,
+  firstboot_birthdata_month_change_entered: 0,
+  firstboot_birthdata_day_change_entered: 0
 };
 const LIMIT_PER_EVENT = 16;
 let hooksReady = false;
@@ -59,6 +67,51 @@ let packedLNG = null;
 let packedCNTRY = null;
 let fromCommonBasicCaller = false;
 let nativeModuleReady = false;
+// FirstBootViewInputBirthData instance, strictly private to this local Agent.
+// Original managed offsets verified in IL2CppDumper dump.cs:
+// yearDropdown +0x28, yearOptionDataList +0x40, inputedYear +0x58,
+// inputedMonth +0x5C, inputedDay +0x60.
+let birthViewPtr = null;
+
+function readBirthdateUIState() {
+  const empty = {
+    controller_seen: birthViewPtr !== null,
+    year_dropdown_present: false,
+    year_option_list_present: false,
+    year_option_count: null,
+    inputed_year_in_supported_range: false,
+    inputed_year_equals_1999: false,
+    inputed_month_in_range: false,
+    inputed_day_in_range: false,
+    exact_birthdate_selected: false
+  };
+  if (birthViewPtr === null) return empty;
+  try {
+    const yearDropdown = birthViewPtr.add(0x28).readPointer();
+    const yearList = birthViewPtr.add(0x40).readPointer();
+    const year = birthViewPtr.add(0x58).readS32();
+    const month = birthViewPtr.add(0x5C).readS32();
+    const day = birthViewPtr.add(0x60).readS32();
+    let count = null;
+    if (!yearList.isNull()) {
+      const n = yearList.add(0x18).readS32(); // List<T>._size on 64-bit IL2CPP
+      if (n >= 0 && n <= 500) count = n;
+    }
+    return {
+      controller_seen: true,
+      year_dropdown_present: !yearDropdown.isNull(),
+      year_option_list_present: !yearList.isNull(),
+      year_option_count: count,
+      inputed_year_in_supported_range: year >= 1900 && year <= 2100,
+      inputed_year_equals_1999: year === 1999,
+      inputed_month_in_range: month >= 1 && month <= 12,
+      inputed_day_in_range: day >= 1 && day <= 31,
+      exact_birthdate_selected: year === 1999 && month === 4 && day === 5
+    };
+  } catch (_) {
+    return empty;
+  }
+}
 
 function emit(event, extra = {}) {
   // All messages are categorical. NEVER send raw UTID, lng, cntry, token,
@@ -81,6 +134,7 @@ rpc.exports = {
       first_basic_seen: basicObserved,
       observed_common_basic_caller: fromCommonBasicCaller,
       serialized_lng_cntry_seen: packedLNG !== null && packedCNTRY !== null,
+      birthdate_ui: readBirthdateUIState(),
       counts: {...counts}
     };
   },
@@ -96,6 +150,8 @@ rpc.exports = {
       request_packed_values_seen: packedLNG !== null && packedCNTRY !== null,
       lng_candidate: packedLNG,
       cntry_candidate: packedCNTRY,
+      // Private local RPC, not included in sanitized public artifacts.
+      birthdate_ui: readBirthdateUIState(),
       interpretation: 'LANGUAGE_COUNTRY_DTO_FIELDS_AND_TID7_UI_SEMANTICS_UNVERIFIED'
     };
   }
@@ -185,6 +241,41 @@ function install(lib) {
   hook('common_response', RVA.commonResponseHook,
        onEntered('common_response_handler_entered'));
 
+  // The birthdate VIEW is observable before account creation. This is not
+  // registration or service response instrumentation and never sets DOB.
+  hook('birthview_setdata', RVA.birthSetData, {
+    onEnter(args) {
+      birthViewPtr = args[0];
+      milestone('firstboot_birthdata_setdata_entered', {
+        raw_birthdate_values_redacted: true,
+        field_offsets_static_only: true
+      });
+    }
+  });
+  hook('birthview_year_change', RVA.birthOnYearChange, {
+    onEnter(args) {
+      birthViewPtr = args[0];
+      milestone('firstboot_birthdata_year_change_entered', {
+        raw_year_value_redacted: true
+      });
+    }
+  });
+  hook('birthview_month_change', RVA.birthOnMonthChange, {
+    onEnter(args) {
+      birthViewPtr = args[0];
+      milestone('firstboot_birthdata_month_change_entered', {
+        raw_month_value_redacted: true
+      });
+    }
+  });
+  hook('birthview_day_change', RVA.birthOnDayChange, {
+    onEnter(args) {
+      birthViewPtr = args[0];
+      milestone('firstboot_birthdata_day_change_entered', {
+        raw_day_value_redacted: true
+      });
+    }
+  });
   hook('set_basic', RVA.setBasic, {
     onEnter(args) {
       if (basicObserved) return;
