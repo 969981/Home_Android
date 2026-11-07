@@ -153,13 +153,16 @@ def main() -> int:
     parser.add_argument("--settle-seconds", type=int, default=16)
     parser.add_argument("--probe-birthday-year", action="store_true",
                         help="Only open year picker after exact known birthdate UI; never submit")
+    parser.add_argument("--probe-year-dpad", action="store_true",
+                        help="On verified open year list send one non-selecting DPAD_DOWN key")
     args = parser.parse_args()
     observer = ARM64RealmStageMonitor(
         args.server, args.network_script, args.arm64_script)
     report = diag.run(
         args.apk, args.output, settle=max(3,min(60,args.settle_seconds)),
         observer=observer, select_china_mainland=True,
-        probe_birthday_year=args.probe_birthday_year)
+        probe_birthday_year=args.probe_birthday_year,
+        probe_year_dpad=args.probe_year_dpad)
     obs = report.get("stage_monitor", {})
     arm = obs.get("arm64_emulated_realm", {})
     snapshot = arm.get("snapshot", {})
@@ -173,6 +176,10 @@ def main() -> int:
         "birthday_year_picker_screenshot_saved":
             report.get("birthday_year_picker_screenshot_saved"),
         "birthday_submitted": False,
+        "year_keyboard_probe_sent": report.get("year_keyboard_probe_sent"),
+        "year_popup_verifiable_after_keyboard":
+            report.get("year_popup_verifiable_after_keyboard"),
+        "year_keyboard_image_changed": report.get("year_keyboard_image_changed"),
         "frida_x64_status": obs.get("status"),
         "arm64_emulated_status": arm.get("status"),
         "arm64_emulated_error_type": arm.get("error_type"),
