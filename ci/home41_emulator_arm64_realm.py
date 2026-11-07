@@ -46,6 +46,26 @@ _ALLOWED_AGENT_EVENTS = frozenset({
 })
 
 
+def sanitize_option_status(raw: object, *, expected_count: int) -> dict:
+    """Only report fixed menu size / target index / selection status."""
+    obj=raw if isinstance(raw,dict) else {}
+    count=obj.get("option_count")
+    index=obj.get("target_index")
+    return {
+        "dropdown_present":obj.get("dropdown_present") is True,
+        "option_list_present":obj.get("option_list_present") is True,
+        "option_count":count if type(count) is int and
+                       0<=count<=32 else None,
+        "target_index":index if type(index) is int and
+                       0<=index<expected_count else None,
+        "target_found_uniquely":obj.get("target_found_uniquely") is True,
+        "value_index_equals_target":obj.get(
+            "value_index_equals_target") is True,
+        "target_option_text_verified":obj.get(
+            "target_option_text_verified") is True,
+    }
+
+
 def sanitize_birth_ui(raw: object) -> dict:
     """Whitelist only derived, non-secret birthdate UI probe categories."""
     fields = (
@@ -69,6 +89,17 @@ def sanitize_birth_ui(raw: object) -> dict:
             and 0<=src["year_1999_index"]<=300 else None
         ),
         "first_option_is_2026": src.get("first_option_is_2026") is True,
+        "year_dropdown_value_index": (
+            src.get("year_dropdown_value_index")
+            if type(src.get("year_dropdown_value_index")) is int
+            and -1 <= src["year_dropdown_value_index"] <= 126 else None
+        ),
+        "year_dropdown_value_equals_1999_option": (
+            src.get("year_dropdown_value_equals_1999_option") is True),
+        "month_dropdown":sanitize_option_status(
+            src.get("month_dropdown"),expected_count=12),
+        "day_dropdown":sanitize_option_status(
+            src.get("day_dropdown"),expected_count=31),
         # Never export raw birth date, pointer, list elements or account data.
         "raw_birthdate_logged": False,
     }
