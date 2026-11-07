@@ -17,6 +17,7 @@ import os
 import re
 import sys
 import threading
+import time
 from pathlib import Path
 
 # Reuse the strict installed APK SHA + native architecture guards.
@@ -274,9 +275,13 @@ def run(apk: Path, script_path: Path, serial: str | None,
         script.load()
         device.resume(pid)
         resumed = True
-        # Poll, so an incomplete or failed hook never passes as an ID read.
-        stop_early.wait(timeout=min(max(1, timeout), 3600)
-                        if not got_first_basic.is_set() else 0)
+        # Wait for either first validated basic, hook failure or timeout.
+        # Do NOT wait for the whole deadline after first_basic was observed.
+        deadline = time.monotonic() + min(max(1, timeout), 3600)
+        while time.monotonic() < deadline:
+            if got_first_basic.is_set() or stop_early.is_set():
+                break
+            stop_early.wait(min(0.25, max(0, deadline - time.monotonic())))
         # The first UTID may be received while waiting; it is never printed in
         # the public event stream. Explicit local RPC optionally displays it.
         if show_local_values and script is not None and ready:
