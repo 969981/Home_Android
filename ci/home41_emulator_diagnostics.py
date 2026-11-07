@@ -159,6 +159,19 @@ def match_known_ui(data: bytes, stage: str):
                 near(at(.4, .34), (240, 30, 30), 18) and
                 near(at(.7, .95), (255, 173, 4), 15)):
             return (int(w * .285), int(h * .287))
+    elif stage in ("birthday_month_native", "birthday_day_native"):
+        # After original year OnSelectItem, 1999 is VISIBLY rendered:
+        # (.2,.29) is now gray text instead of the white empty caption.
+        # Keep independent age-screen/background guards. ARM64 RPC additionally
+        # validates the exact month/day dropdown pointer and original index.
+        if (near(at(.5,.14),(38,179,151),12) and
+                near(at(.5,.24),(198,242,161),14) and
+                near(at(.2,.29),(142,142,142),18) and
+                near(at(.8,.29),(248,250,245),12) and
+                near(at(.4,.34),(240,30,30),18) and
+                near(at(.7,.95),(255,173,4),15)):
+            x=.59 if stage=="birthday_month_native" else .88
+            return (int(w*x),int(h*.287))
     elif stage in ("birthday_month_dropdown", "birthday_day_dropdown"):
         # Shared exact AGE form signature; never click NEXT or Terms.
         if (near(at(.5, .14), (38, 179, 151), 12) and
@@ -666,13 +679,13 @@ def run(apk: Path, out: Path, settle: int = 25,
                                                     month_before=screenshot(out,
                                                         "18_native_month_before.png")
                                                     if month_before and match_known_ui(
-                                                            month_before,"birthday_month_dropdown"):
+                                                            month_before,"birthday_month_native"):
                                                         mm["native_month_item_select_armed"] = bool(
                                                             hasattr(observer,"arm_native_month_item_select")
                                                             and observer.arm_native_month_item_select())
                                                     if mm["native_month_item_select_armed"]:
                                                         mm["native_month_item_select_tapped"] = click_if_known(
-                                                            month_before,"birthday_month_dropdown")
+                                                            month_before,"birthday_month_native")
                                                     if mm["native_month_item_select_tapped"]:
                                                         time.sleep(2)
                                                         month_after=screenshot(out,
@@ -685,13 +698,13 @@ def run(apk: Path, out: Path, settle: int = 25,
                                                             day_before=screenshot(out,
                                                                 "19b_native_day_before.png")
                                                             if day_before and match_known_ui(
-                                                                    day_before,"birthday_day_dropdown"):
+                                                                    day_before,"birthday_day_native"):
                                                                 mm["native_day_item_select_armed"] = bool(
                                                                     hasattr(observer,"arm_native_day_item_select")
                                                                     and observer.arm_native_day_item_select())
                                                             if mm["native_day_item_select_armed"]:
                                                                 mm["native_day_item_select_tapped"] = click_if_known(
-                                                                    day_before,"birthday_day_dropdown")
+                                                                    day_before,"birthday_day_native")
                                                             if mm["native_day_item_select_tapped"]:
                                                                 time.sleep(2)
                                                                 day_after=screenshot(out,
