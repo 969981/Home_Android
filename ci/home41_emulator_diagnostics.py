@@ -366,7 +366,8 @@ def run(apk: Path, out: Path, settle: int = 25,
         probe_birthday_year: bool = False,
         probe_year_dpad: bool = False,
         select_local_year_1999: bool = False,
-        select_local_month_day: bool = False) -> dict:
+        select_local_month_day: bool = False,
+        probe_year_touch_scroll: bool = False) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     report = {
         "version": "4.1.0", "device": "disposable_github_actions_avd",
@@ -399,7 +400,10 @@ def run(apk: Path, out: Path, settle: int = 25,
             "day_popup_screenshot_saved": False,
             "day_form_after_back_saved": False,
             "year_reopened_after_full_internal_dob": False,
-            "year_reopen_screenshot_saved": False
+            "year_reopen_screenshot_saved": False,
+            "year_touch_scroll_requested": probe_year_touch_scroll,
+            "year_touch_scroll_attempts": [],
+            "year_touch_scroll_any_roi_change": False
         },
         "account_delete_attempted": False,
         "first_basic_utid_status": "not_observed",
@@ -588,8 +592,51 @@ def run(apk: Path, out: Path, settle: int = 25,
                                                 year_again,"birthday_year_dropdown")
                                         if mm["year_reopened_after_full_internal_dob"]:
                                             time.sleep(3)
-                                            mm["year_reopen_screenshot_saved"] = bool(
-                                                screenshot(out,"17_year_reopened_index27.png"))
+                                            reopened=screenshot(
+                                                out,"17_year_reopened_index27.png")
+                                            mm["year_reopen_screenshot_saved"] = bool(reopened)
+                                            if (probe_year_touch_scroll and reopened and
+                                                    match_known_ui(reopened,"year_popup_open")):
+                                                # Native Unity EnhancedScroller only:
+                                                # four bounded drags inside the year
+                                                # menu, no clicks, no birthday Next.
+                                                previous=reopened
+                                                for i in range(1,5):
+                                                    if match_known_ui(
+                                                            previous,"year_popup_open") is None:
+                                                        break
+                                                    swipe=adb(
+                                                        "shell","input","swipe",
+                                                        str(int(1080*.18)),
+                                                        str(int(2340*.60)),
+                                                        str(int(1080*.18)),
+                                                        str(int(2340*.36)),
+                                                        "650",timeout=18)
+                                                    ok=bool(swipe and swipe.returncode==0)
+                                                    time.sleep(2)
+                                                    photo=screenshot(out,
+                                                        f"17_scroll_{i:02d}.png")
+                                                    moved=False
+                                                    if photo and previous:
+                                                        try:
+                                                            from PIL import Image, ImageChops
+                                                            with Image.open(io.BytesIO(previous)) as aa, Image.open(io.BytesIO(photo)) as bb:
+                                                                aa=aa.convert("RGB");bb=bb.convert("RGB")
+                                                                ww,hh=aa.size
+                                                                roi=(int(ww*.055),int(hh*.32),
+                                                                     int(ww*.35),int(hh*.65))
+                                                                diff=ImageChops.difference(aa.crop(roi),bb.crop(roi))
+                                                                moved=bool(diff.getbbox())
+                                                        except (OSError,ValueError):
+                                                            moved=False
+                                                    mm["year_touch_scroll_attempts"].append({
+                                                        "step":i,"adb_swipe_ok":ok,
+                                                        "screenshot_saved":bool(photo),
+                                                        "roi_changed":moved})
+                                                    mm["year_touch_scroll_any_roi_change"] |= moved
+                                                    if not ok or not photo or not moved:
+                                                        break
+                                                    previous=photo
                                             adb("shell","input","keyevent","KEYCODE_BACK",
                                                 timeout=12)
                                             time.sleep(2)
