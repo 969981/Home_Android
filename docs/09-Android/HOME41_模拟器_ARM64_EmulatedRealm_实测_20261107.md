@@ -237,3 +237,26 @@ Python 运行器现在对 `--realm emulated` 进行特别预检：原始本地 A
 **动态日历注意点**：初始月份未确定时日列表可有 31 项；选择 4 月后，如果游戏根据 `GetDaysOfMonth(1999,4)` 重建日期选项，应当是 **30 项**，不能拿先前的 31 项作为后续索引校验依据。因此日列表检查已改为基于已选择的 4 月动态期待 30 项，并保留 5 日索引必须唯一且为 4。
 
 模拟器新工作流将采集两次原生 Setter 后的截图、组件 `m_Value` 与 `inputedMonth/inputedDay`，公开 Artifact 仅含布尔状态和固定菜单索引。**即使三个内部日期字段都成立，也不表示 DOB 已提交服务器**；直到实际 UI 显示及单账号官方流程验收之前，不得称已成功注册或获取 UTID。
+
+
+## 2026-11-08：实测原版内部完整生日 1999-04-05，但界面仍显示占位符
+
+**真实 Actions [#42390521446](https://github.com/969981/Home_Android/actions/runs/42390521446)**（Artifact `home41-arm64-emulated-realm-proof`，ID **13581097873**）完成了严格只读监控及一次性原版 Unity 下拉框 Setter 实验：
+
+| 原生证据 | 实测 |
+|---|---|
+| ARM64 Emulated Realm / `libil2cpp.so` | 附加成功，全部 Hook 安装 |
+| `inputedYear == 1999`，`yearDropdown.m_Value==27` | true |
+| `inputedMonth == 4`，`monthDropdown.m_Value==3` | true |
+| `inputedDay == 5`，`dayDropdown.m_Value==4` | true |
+| 年列表 / 月列表 / 日期列表 | 127 / 12 / **30**（4 月已更新） |
+| `exact_birthdate_selected` | true，**只代表 HOME 内存控制器的当前字段** |
+| 原版年月日 Setter `attempted/returned` | 全部 true，且 failure 全部 false |
+| `birthday_submitted` / `registration_status` | false / not_attempted |
+| `first_basic_utid_observed` | false |
+
+真实阶段截图 `16_full_date_form_after_back.png` 人工检查：**仍显示“年 / 月 / 日”三个占位符！** 因此不可认定 GUI 层已正确选择出生日期，更不可立即点击【下一步】。关键问题可能在 `CustomTMPDropdown.RefreshShownValue`、`OnSelectItem`、`OnValueChanged` 及关闭弹窗后的显示文字更新，需要与真正的 UI 选项点击做 A/B。
+
+本次 Actions 在最后检查阶段失败，直接原因是旧的**只验证年份**门槛仍要求 `exact_birthdate_selected=false`；而这轮完整内部生日变为 true。真实数据和原版回调 **已经成功**，失败不是 Frida/Unity 失败。已将旧门槛改为只接受完整日期模式，并在新代码中加入 **重新打开年份菜单（内部 `m_Value=27`）的真实截图实验**：如果菜单能滚到 1999，可进一步使用原生 UI 选择来修复三个下拉框的可见占位符。这一后续实验结果未出之前，不宣称可视 UI 成功。
+
+全程：未提交生日、未同意条款、未执行账户创建/删除、未绑定 Nintendo Account、未读取或保存服务器原始 UTID、未取得六位训练家 ID。
