@@ -28,6 +28,26 @@ class ProbeTests(unittest.TestCase):
         self.assertIsNone(probe.match_known_ui(buf.getvalue(), "registration"))
         self.assertIsNone(probe.match_known_ui(buf.getvalue(), "delete"))
 
+    def test_real_china_region_color_variation_keeps_other_pixel_guards(self):
+        from PIL import Image
+        points = [
+            ((.5,.02),(215,255,174)),  # observed real AVD #42394891266
+            ((.5,.14),(38,179,151)),
+            ((.5,.24),(248,250,245)),
+            ((.2,.54),(18,166,168)),
+            ((.2,.57),(18,166,168)),
+        ]
+        image=Image.new("RGB",(1080,2340),(10,10,10))
+        for (x,y),rgb in points:
+            image.putpixel((int(1080*x),int(2340*y)),rgb)
+        buf=io.BytesIO();image.save(buf,format="PNG")
+        self.assertEqual(
+            probe.match_known_ui(buf.getvalue(),"china_mainland"),
+            (540,int(2340*.54)))
+        image.putpixel((int(1080*.2),int(2340*.57)),(10,10,10))
+        buf=io.BytesIO();image.save(buf,format="PNG")
+        self.assertIsNone(probe.match_known_ui(buf.getvalue(),"china_mainland"))
+
     def test_selected_1999_birthpage_uses_distinct_month_day_ui_guard(self):
         from PIL import Image
         img=Image.new("RGB",(1080,2340),(20,20,20))
