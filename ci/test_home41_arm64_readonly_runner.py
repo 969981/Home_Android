@@ -96,6 +96,95 @@ class Arm64ObserverTests(unittest.TestCase):
             "event":"token_value","token":"private-token"}}
         self.assertIsNone(mod.redacted_event(message))
 
+    def test_installed_apk_hash_check_agrees_with_original(self):
+        results = [
+            SimpleNamespace(returncode=0, stdout="package:/data/app/temporary/base.apk\\n"),
+            SimpleNamespace(returncode=0,
+                            stdout=mod.APK_SHA256+"  /data/app/temporary/base.apk\\n"),
+        ]
+        with patch.object(mod, "adb", side_effect=results):
+            self.assertEqual(mod.installed_apk_integrity(), "installed_apk_hash_verified")
+
+    def test_installed_apk_hash_mismatch_blocks_observation(self):
+        results = [
+            SimpleNamespace(returncode=0, stdout="package:/data/app/temporary/base.apk\\n"),
+            SimpleNamespace(returncode=0,
+                            stdout="0"*64+"  /data/app/temporary/base.apk\\n"),
+        ]
+        with patch.object(mod, "adb", side_effect=results):
+            self.assertEqual(mod.installed_apk_integrity(), "installed_apk_hash_mismatch")
+        with patch.object(mod, "preflight", return_value={
+            "result":"native_arm64_original_apk_preflight_ok"}), \\
+             patch.object(mod, "installed_apk_integrity",return_value="installed_apk_hash_mismatch"), \\
+             patch.object(mod,"prepare_script",side_effect=AssertionError("Do not inject")):
+            result=mod.observe(Path("unused.apk"), "888888", None, Path("unused.js"), timeout=1)
+        self.assertEqual(result,2)
+
+    def test_fake_frida_spawn_resume_detach_leaves_app_process_running(self):
+        """Deterministic lifecycle test, not evidence from a real Android device."""
+        import sys
+        from contextlib import redirect_stdout
+        from io import StringIO
+
+        class FakeScript:
+            def __init__(self):
+                self.handler=None
+                self.loaded=False
+            def on(self, name, handler):
+                self.handler=handler
+            def load(self):
+                self.loaded=True
+        class FakeSession:
+            def __init__(self,script):
+                self.script=script
+                self.detached=False
+            def on(self,name,callback):
+                pass
+            def create_script(self,source):
+                return self.script
+            def detach(self):
+                self.detached=True
+        class FakeDevice:
+            def __init__(self):
+                self.script=FakeScript()
+                self.session=FakeSession(self.script)
+                self.resume_count=0
+                self.spawn_count=0
+            def spawn(self,package):
+                self.spawn_count+=1
+                self.package=package
+                return 4242
+            def attach(self,pid):
+                assert pid == 4242
+                return self.session
+            def resume(self,pid):
+                self.resume_count+=1
+                self.script.handler({
+                    "type":"send","payload":{
+                        "kind":"home41_utid_readonly","version":"4.1.0",
+                        "event":"first_basic_utid_observed",
+                        "candidate_matches_target":True,
+                        "utid":"SENSITIVE_NEVER_LOG"}},None)
+        device=FakeDevice()
+        frida=SimpleNamespace(get_usb_device=lambda timeout:device)
+        output=StringIO()
+        with patch.object(mod,"preflight",return_value={
+                 "result":"native_arm64_original_apk_preflight_ok"}), \\
+             patch.object(mod,"installed_apk_integrity",
+                          return_value="installed_apk_hash_verified"), \\
+             patch.object(mod,"prepare_script",return_value="fake frida script"), \\
+             patch.dict(sys.modules,{"frida":frida}), redirect_stdout(output):
+            code=mod.observe(Path("unused.apk"),"888888",None,
+                             Path("unused.js"),timeout=1)
+        self.assertEqual(code,0)
+        self.assertTrue(device.script.loaded)
+        self.assertTrue(device.session.detached)
+        self.assertEqual(device.resume_count,1)
+        self.assertEqual(device.spawn_count,1)
+        self.assertEqual(device.package,[mod.PACKAGE])
+        self.assertIn("candidate_matches_target",output.getvalue())
+        self.assertNotIn("SENSITIVE_NEVER_LOG",output.getvalue())
+
 
 if __name__=="__main__":
     unittest.main()
