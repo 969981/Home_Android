@@ -138,6 +138,17 @@ def match_known_ui(data: bytes, stage: str):
                 all(near(at(.3, y), (248, 250, 245), 12)
                     for y in (.24, .30, .36, .42, .48, .54, .60))):
             return (int(w * .82), int(h * .48))
+    elif stage == "year_popup_open":
+        # Verified real Unity dropdown: year list begins at 2026 and shows
+        # entries through 2018. This only gates a single DPAD_DOWN key.
+        if (near(at(.5,.15),(38,179,151),16) and
+                near(at(.2,.29),(238,240,235),16) and
+                near(at(.2,.35),(237,240,235),16) and
+                near(at(.2,.45),(237,240,235),16) and
+                near(at(.2,.55),(237,240,235),16) and
+                near(at(.5,.4),(178,239,174),22) and
+                near(at(.5,.95),(255,173,4),16)):
+            return (int(w*.2),int(h*.4))
     elif stage == "birthday_year_dropdown":
         # Real ARM64-emulated AVD screenshot #42378951870, exact original
         # "确认年龄" empty YYYY/MM/DD UI. Open year only; never submit birthday.
@@ -342,7 +353,8 @@ def redacted_system_diagnostics() -> dict:
 
 def run(apk: Path, out: Path, settle: int = 25,
         observer=None, select_china_mainland: bool = False,
-        probe_birthday_year: bool = False) -> dict:
+        probe_birthday_year: bool = False,
+        probe_year_dpad: bool = False) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     report = {
         "version": "4.1.0", "device": "disposable_github_actions_avd",
@@ -358,6 +370,9 @@ def run(apk: Path, out: Path, settle: int = 25,
         "birthday_entered": False,
         "birthday_year_dropdown_tapped": False,
         "birthday_year_picker_screenshot_saved": False,
+        "year_keyboard_probe_sent": False,
+        "year_popup_verifiable_after_keyboard": False,
+        "year_keyboard_image_changed": False,
         "birthday_submitted": False,
         "account_delete_attempted": False,
         "first_basic_utid_status": "not_observed",
@@ -464,8 +479,40 @@ def run(apk: Path, out: Path, settle: int = 25,
                 birthday, "birthday_year_dropdown")
             if report["birthday_year_dropdown_tapped"]:
                 time.sleep(3)
-                report["birthday_year_picker_screenshot_saved"] = bool(
-                    screenshot(out, "08_birthdate_year_picker_open.png"))
+                first_popup = screenshot(out, "08_birthdate_year_picker_open.png")
+                report["birthday_year_picker_screenshot_saved"] = bool(first_popup)
+                if probe_year_dpad and first_popup and match_known_ui(
+                        first_popup,"year_popup_open") is not None:
+                    # One non-activating keyboard navigation key, NEVER Enter,
+                    # Return, Next, or Date submission. Unknown state => stop.
+                    pressed = adb("shell","input","keyevent",
+                                  "KEYCODE_DPAD_DOWN",timeout=15)
+                    report["year_keyboard_probe_sent"] = bool(
+                        pressed and pressed.returncode == 0)
+                    if report["year_keyboard_probe_sent"]:
+                        time.sleep(3)
+                        second_popup = screenshot(out,
+                            "09_year_after_single_dpad_down.png")
+                        report["year_popup_verifiable_after_keyboard"] = bool(
+                            second_popup and match_known_ui(
+                                second_popup,"year_popup_open") is not None)
+                        if second_popup and report[
+                                "year_popup_verifiable_after_keyboard"]:
+                            try:
+                                from PIL import Image, ImageChops
+                                with Image.open(io.BytesIO(first_popup)) as bef:
+                                    before = bef.convert("RGB")
+                                with Image.open(io.BytesIO(second_popup)) as aft:
+                                    after = aft.convert("RGB")
+                                w,h=before.size
+                                roi=(int(w*.11),int(h*.3),
+                                     int(w*.31),int(h*.64))
+                                difference=ImageChops.difference(
+                                    before.crop(roi),after.crop(roi))
+                                report["year_keyboard_image_changed"] = bool(
+                                    difference.getbbox())
+                            except (OSError,ValueError):
+                                report["year_keyboard_image_changed"] = False
         time.sleep(settle)
         report["final_screenshot_saved"] = bool(
             screenshot(out, "04_final.png"))
