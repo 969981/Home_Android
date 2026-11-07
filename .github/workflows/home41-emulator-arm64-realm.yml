@@ -89,7 +89,7 @@ jobs:
           heap-size: 512M
           disable-animations: true
           emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
-          script: python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --probe-year-dpad
+          script: python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --select-local-year-1999
 
       - name: Report strict ARM64 realm results and ordinary UI evidence
         if: always()
@@ -108,6 +108,8 @@ jobs:
                   r=json.loads(source.read_text(encoding='utf-8'))
                   for k in ('result','language_clicked','language_confirmation_clicked',
                             'region_dropdown_expanded','country_selected',
+                            'year1999_local_setter_arm_requested',
+                            'year1999_local_setter_screenshot_saved',
                             'registration_status','first_basic_utid_status'):
                       f.write(f'- {k}: `{r.get(k, "unavailable")}`\n')
                   monitor=r.get('stage_monitor',{})
@@ -123,7 +125,9 @@ jobs:
                   for key in ('controller_seen','year_dropdown_present',
                               'year_option_list_present','year_option_count',
                               'year_1999_index','first_option_is_2026',
-                              'inputed_year_equals_1999','exact_birthdate_selected'):
+                              'year_setter_attempted','year_setter_returned',
+                              'year_setter_failure','inputed_year_equals_1999',
+                              'exact_birthdate_selected'):
                       f.write(f'- Birthdate UI {key}: \`{birth.get(key,"unavailable")}\`\\n')
                   net=monitor.get('network',{})
                   f.write(f'- Network hooks: connect=`{net.get("connect_hook","unknown")}`, '
@@ -174,9 +178,21 @@ jobs:
           if not (Path("ci-frida-results/08_birthdate_year_picker_open.png").is_file()):
               raise SystemExit("NOT VERIFIED: missing actual year-picker screenshot")
           print("VERIFIED: one controlled year selector tap and its screenshot; no birthday submitted")
-          if r.get("year_keyboard_probe_sent") is not True or not Path(
-                  "ci-frida-results/09_year_after_single_dpad_down.png").is_file():
-              raise SystemExit("NOT VERIFIED: one safe keyboard navigation key and screenshot")
-          print("VERIFIED: sent one DPAD_DOWN on known year popup and captured next frame")
-          print("NO CLAIM: target year 1999 selected or any birthdate submitted")
+          if not r.get("year1999_local_setter_arm_requested") or not Path(
+                  "ci-frida-results/09_year1999_after_local_setter.png").is_file():
+              raise SystemExit("NOT VERIFIED: native-year-options guarded setter and screenshot")
+          ui=snap.get("birthdate_ui",{})
+          if not (ui.get("year_option_count")==127
+                  and ui.get("year_1999_index")==27
+                  and ui.get("first_option_is_2026") is True
+                  and ui.get("year_setter_attempted") is True
+                  and ui.get("year_setter_returned") is True
+                  and ui.get("year_setter_failure") is False
+                  and ui.get("inputed_year_equals_1999") is True
+                  and ui.get("exact_birthdate_selected") is False
+                  and r.get("birthday_submitted") is False
+                  and r.get("registration_status")=="not_attempted"):
+              raise SystemExit("NOT VERIFIED: native year setter did not prove local 1999 without DOB submission")
+          print("VERIFIED: native original dropdown setter called once and local inputedYear == 1999")
+          print("NO CLAIM: birthday submitted, registered account or server basic UTID observed")
           PY
