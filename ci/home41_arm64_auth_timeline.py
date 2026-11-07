@@ -238,7 +238,7 @@ def preflight_for_realm(apk: Path, serial: str | None, realm: str) -> dict:
         return {"result": "native_bridge_arm_emulation_not_configured"}
     installed = core.adb(["shell", "dumpsys", "package", core.PACKAGE], serial)
     from_text = installed.stdout if installed and installed.returncode == 0 else ""
-    if "81" not in __import__("re").findall(r"\\bversionCode=(\\d+)\\b", from_text or ""):
+    if "81" not in re.findall(r"\\bversionCode=(\\d+)\\b", from_text or ""):
         return {"result": "wrong_or_missing_installed_home_version"}
     return {
         "result": "emulated_arm64_guest_preflight_ok",
@@ -319,8 +319,8 @@ def run(apk: Path, script_path: Path, serial: str | None,
             # libraries were brought up. Attach to the user's ALREADY RUNNING
             # original HOME before they advance the registration UI.
             p = core.adb(["shell", "pidof", core.PACKAGE], serial)
-            candidates = __import__("re").findall(
-                r"\\b\\d+\\b", p.stdout or "") if p and p.returncode == 0 else []
+            candidates = re.findall(
+                r"\b\d+\b", p.stdout or "") if p and p.returncode == 0 else []
             if not candidates:
                 raise RuntimeError("HOME_not_running_for_emulated_realm")
             pid = int(candidates[0])
