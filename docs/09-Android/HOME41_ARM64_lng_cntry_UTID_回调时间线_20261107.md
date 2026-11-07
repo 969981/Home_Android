@@ -25,6 +25,8 @@ updated: 2026-11-07
 | --- | --- | --- |
 | `registration_request_serializer_entered` | `0x1D334A4` | `ApiRequestAuthRegisterUser.SerializeRequestParameter` 进入 |
 | `registration_lng_cntry_packed_write_seen` | `0x1D335C0`，紧接 `0x1D335BC` 后 | 注册 DTO 的 `+0x28/+0x2C` 两个整数 `lng/cntry` 已被写入候选 |
+| `registration_request_formatter_entered` | `0x205AEF0` | `ApiAuthRegisterUserRequestParamFormatter.Serialize` 真正格式化请求业务 DTO（仍不等于 HTTP 已发送） |
+| `registration_response_formatter_entered` | `0x205DA3C` | `ApiAuthRegisterUserResponseParamFormatter.Deserialize` 开始解析注册专属响应（该专属 DTO 无 UTID） |
 | `registration_response_handler_entered` | `0x1D33294` | `ApiRequestAuthRegisterUser.CallAfterResponse` 进入；不代表 HTTP 成功 |
 | `token_request_serializer_entered` | `0x1D35888` | `ApiRequestCreateToken.SerializeRequestParameter` |
 | `token_response_handler_entered` | `0x1D35AD0` | Token 响应回调进入 |
@@ -112,3 +114,15 @@ py -3 ci/home41_arm64_auth_timeline.py `
 # 6. 最新离线结果
 
 [Actions #42374973314](https://github.com/969981/Home_Android/actions/runs/42374973314)：**12/12 项离线测试通过**（含脱敏、负例、纯模拟 Frida lifecycle）。实际的 ARM64 账号回调、`lng/cntry` 数值和首个 `basic.utid` 均**未被真实抓取**，不能将该 CI success 写为在线 API 取数成功。
+
+
+## 7. 补充：已把注册 DTO Formatter 和 Deserialize 真正加入监控
+
+在原来仅监测 `ApiRequestAuthRegisterUser.SerializeRequestParameter` / `CallAfterResponse` 的基础上，新增独立 Frida 原生 Hook：
+
+- `ApiAuthRegisterUserRequestParamFormatter.Serialize`，RVA `0x205AEF0`：`registration_request_formatter_entered`；
+- `ApiAuthRegisterUserResponseParamFormatter.Deserialize`，RVA `0x205DA3C`：`registration_response_formatter_entered`。
+
+其意义是**将业务 DTO 的构造、格式化，以及专属响应的反序列化三件事区分开**。不获取原始 JSON / token，不把 `Deserialize` 当作“服务器发给了 utid”，因为该专属响应类型只包含 `uuid,apRes,naRes`。
+
+这两个 Hook 的 RVA 属于静态研究索引，需要实机确认函数确实命中且不会干扰官方 APP。调用 `Deserialize` 并不能单独证明请求发出、HTTP 200 或响应来自何 endpoint。真正 `utid` 首次出现仍以 `SetBasic` 的公共响应调用源、实机动态值与官方 UI 三重证据为准。
