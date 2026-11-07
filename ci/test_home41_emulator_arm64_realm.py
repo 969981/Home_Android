@@ -46,6 +46,8 @@ class ARM64RealmContractTests(unittest.TestCase):
             "controller_seen":True, "year_dropdown_present":True,
             "year_option_list_present":True,
             "year_option_count":127,
+            "year_1999_index":27,
+            "first_option_is_2026":True,
             "inputed_year_in_supported_range":True,
             "inputed_year_equals_1999":False,
             "inputed_month_in_range":False, "inputed_day_in_range":False,
@@ -64,6 +66,8 @@ class ARM64RealmContractTests(unittest.TestCase):
         state=result["birthdate_ui"]
         self.assertTrue(state["controller_seen"])
         self.assertEqual(state["year_option_count"],127)
+        self.assertEqual(state["year_1999_index"],27)
+        self.assertTrue(state["first_option_is_2026"])
         self.assertFalse(state["inputed_year_equals_1999"])
         self.assertNotIn("2019",repr(result))
         self.assertNotIn("0xDEADBEEF",repr(result))
@@ -77,6 +81,9 @@ class ARM64RealmContractTests(unittest.TestCase):
                 state=mod.sanitize_birth_ui({"year_option_count":val})
                 self.assertIsNone(state["year_option_count"])
                 self.assertFalse(state["exact_birthdate_selected"])
+        for val in (301,-1,"27",True):
+            self.assertIsNone(mod.sanitize_birth_ui(
+                {"year_1999_index":val})["year_1999_index"])
 
     def test_non_dict_snapshot_fails_closed(self):
         self.assertEqual(mod.sanitized_arm64_snapshot(None),
