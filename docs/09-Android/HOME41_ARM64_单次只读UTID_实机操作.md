@@ -80,3 +80,42 @@ py -3 ci/home41_arm64_readonly_runner.py restart-smoke --apk "$apk"
 ## 6. 公开报告安全约定
 
 公开仓库可以保存 Hook、偏移、哈希、布尔目标匹配、测试失败原因、回调相对时间及充分脱敏的结构化报告。不能上传真实 Cookie、UUID、CID、Nintendo 令牌、原始 `basic.utid`、完整 logcat、认证包、设备唯一标识或可能包含这些信息的屏幕私有截图。即使不绑定 Nintendo Account，HOME 仍可能生成自身的登录会话和服务端资料。
+
+
+## 7. 2026-11-07：双阶段真实验收入口
+
+现在另有 `ci/home41_arm64_runtime_acceptance.py`，它把单次 `observe` 扩展成真正有条件的三个验收门槛：
+
+1. **Hook 与 UI 对账**：原生 ARM64 进程的 `UDManager.SetBasic` 捕获到首个数字候选后，操作者查看 HOME 的真实六位 ID，在本地终端无回显输入。Frida `rpc.exports.comparevisibleid()` 仅返回 `displayed_id_matches` 布尔值。**原 ID 不通过 Frida 消息输出，也不上传 GitHub。**
+2. **APP 不被破坏**：第一阶段结束后执行 Frida `session.detach()`；ADB 验证 `jp.pokemon.pokemonhome` 进程仍在运行，操作者在实际手机确认原 APP 可正常操作，只有输入 `yes` 才继续。
+3. **真正的冷启动同号**：本地交互允许后，执行官方 Android `am force-stop jp.pokemon.pokemonhome`，再 `frida.spawn → attach → resume` 观察第二次 `SetBasic`。将第二次的原始候选在 APP 内存中与**第一次输入的显示 ID**比对；Frida 断开后再次要求操作者确认 APP 显示同一 ID 且可操作。
+
+本地 PowerShell：
+
+```powershell
+git pull origin master
+$apk = (Get-ChildItem 'ROMS/4.1.0/*.apk' | Select-Object -First 1).FullName
+py -3 -m pip install frida
+py -3 ci/home41_arm64_runtime_acceptance.py --apk "$apk" --target 888888 --timeout 600
+```
+
+如果同时连接多个 Android 设备，可指定 `--serial <adb-serial>`，但应确保 Frida Device ID 也对应正确设备。必须预先在本人控制的原生 ARM64 测试设备上配置兼容的 Frida Server。原版 APK 应先安装，不使用重签名版本；非原版 APK、ABI 不符、版本号或设备上实际安装的 `base.apk` 哈希不符会直接拒绝 Hook。
+
+### 双阶段状态含义
+
+| 控制台结果 | 实际证明 |
+| --- | --- |
+| `phase_complete: first_basic_matches_displayed_id` | 对应一次动态 `SetBasic`，从内存读取的候选与手工输入的官方 UI 六位值一致（若设备真实连接且 Hook 成功） |
+| `client_handoff: normal_client_usable=true` | Frida 已断开且操作员在真实 APP 中确认能继续使用 |
+| `phase_complete` phase=2 | 冷启动产生了**第二次**原生 `SetBasic` 读数，与第一次手工记录的 UI ID 一致 |
+| `acceptance_complete: REAL_DEVICE_THREE_GATES_PASSED` | 完整完成双阶段读数 + UI 核对 + 原版接管 + 冷启动验证，且仅在真实 ARM64设备交互脚本执行后才有此含义 |
+
+即使三个门槛都通过，也只能证明测试的 HOME 会话身份连续性，不代表非 UI 批量注册、删除流程或 Nintendo Account 绑定机制被实现。
+
+### 新增离线测试，不可冒充实机验收
+
+- [Actions #42360875688](https://github.com/969981/Home_Android/actions/runs/42360875688)：Python 2 阶段模拟控制流程 **8/8 单元测试通过**，既有 ARM64 启动工具测试 **11/11 通过**，Frida JS 语法检查通过。
+- 模拟用例包括两次读到同号通过、第二次读到不同号码必须失败、第一阶段与 UI 不一致时不触发冷启动、拒绝冷启动时不继续、APP 接管失败时停止、第二次界面确认失败时停止、脱敏日志与输入有效性检查。
+- **没有连接真实 ARM64 Android、没有访问 HOME 注册服务、没有执行真的 `SetBasic` 回调、没有得到真正的六位 ID。** 假 Frida 事件只用于验证控制程序不会误报或删除 APP 数据。
+
+下一项唯一真正缺失的证据：原生 ARM64 Android 设备的动态 `SetBasic` 入口命中、官方 UI ID 与回调值一致、冷启动后第二次命中与官方显示同号。GitHub 托管 x86_64 模拟器不能代替这项验收。
