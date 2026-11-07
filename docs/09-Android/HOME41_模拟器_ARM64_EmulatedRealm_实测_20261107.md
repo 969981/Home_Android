@@ -154,3 +154,49 @@ Python 运行器现在对 `--realm emulated` 进行特别预检：原始本地 A
 - [原生/Emulated 双环境 Python 时序运行器](../../ci/home41_arm64_auth_timeline.py)
 - [脱敏与防误报测试](../../ci/test_home41_emulator_arm64_realm.py)
 - [ARM64 请求/回调时间线测试](../../ci/test_home41_arm64_auth_timeline.py)
+
+
+## 6. 1999-04-05 年份滚轮问题：独立真实运行与字节级审计
+
+目标测试生日固定 **1999-04-05**；已在 `PokeHome_Resources` 私有分支的真实模拟器图像 [#42368887392](https://github.com/969981/PokeHome_Resources/actions/runs/42368887392) 验证本地表单 **月=4、日=5，年份为空，未提交**。统一实验继续保留不绑定 Nintendo Account、头像首个有效选项、小火龙 #0004；不自动提交生日、同意服务协议、创建/删除账号。
+
+### 无副作用输入方式的实际反例
+
+| 真实运行 | 结果 |
+|---|---|
+| [#42360115832](https://github.com/969981/PokeHome_Resources/actions/runs/42360115832) | 文字区域 ADB swipe 意外选中 `2019` 并关闭弹窗，没有滚动 |
+| [#42366372912](https://github.com/969981/PokeHome_Resources/actions/runs/42366372912) | 选择 `2018` 后重开仍从 `2026..2018` 开始，不会锚点分页 |
+| [#42360703091](https://github.com/969981/PokeHome_Resources/actions/runs/42360703091) | Android mouse ACTION_SCROLL 返回成功，实际年份文字无像素变化 |
+| [#42362631400](https://github.com/969981/PokeHome_Resources/actions/runs/42362631400) | KEYCODE_PAGE_DOWN 无视觉移动，UIAutomator 无年份 Text 节点 |
+| [#42383783516](https://github.com/969981/Home_Android/actions/runs/42383783516) | ARM64 Frida 就绪状态下，在年份菜单按一次 `KEYCODE_DPAD_DOWN`，菜单仍打开；真实字体像素掩码前后 9348/9348，异或零、交并比 1.0，说明没有移动。源码的 `year_keyboard_image_changed` 只报告整图部分像素变化，**不得**充作年份移动的证据 |
+
+为定位真实滚动与选项数据，新的只读代码通过 `FirstBootViewInputBirthData` 实例捕获 `yearOptionDataList`，按实际 64-bit IL2CPP 的 `List<T>._items` 与 `OptionData.m_Text` 解析年份字符串，公开日志只保留 `year_option_count`、`year_1999_index`（如果找到）与 `first_option_is_2026`，不导出年份列表、DOB、指针或登录会话。
+
+### 方法原理的真实静态证据
+
+私有 [180628 方法索引 #42383949461](https://github.com/969981/PokeHome_Resources/actions/runs/42383949461) 找到 `FirstBootViewInputBirthData`、`CustomTMPDropdown`、`CustomTMPDropdownScrollList` 等候选。随后 [私有 dump.cs 类布局 #42384315106](https://github.com/969981/PokeHome_Resources/actions/runs/42384315106) 闭合字段：
+
+- `FirstBootViewInputBirthData.yearDropdown +0x28`、`yearOptionDataList +0x40`，`inputedYear +0x58`，`inputedMonth +0x5C`，`inputedDay +0x60`，`START_YEAR = 1900`。
+- `CustomTMPDropdown.m_Value +0x138`、`m_Options +0x140`；`CustomTMPDropdown.OptionData.m_Text +0x10`（托管字符串）。
+- `FirstBootViewInputBirthData.SetData = 0x1C80964`，`OnYearChageValue = 0x1C80EF8`；`CustomTMPDropdown.set_value = 0x1F14014`、内部 `SetValue = 0x1F1401C`。
+
+**原版 ARM64 ELF 真正反汇编**：[Actions #42384802086](https://github.com/969981/Home_Android/actions/runs/42384802086)，SHA 同版本双重校验，通过原生字节核验后导出 `birthdata_setdata.asm`、`birthdata_onyear.asm`、`custom_dropdown_setvalue.asm`、`custom_dropdown_onselect.asm`、`custom_scroll_open.asm`：
+
+```asm
+; CustomTMPDropdown.set_value(int)
+0x1F14014 MOV W2,#1           ; sendCallback=true
+0x1F14018 B 0x1F1401C         ; delegated SetValue
+; CustomTMPDropdown.SetValue
+0x1F140E0 STR W8,[X19,#312]  ; m_Value (+0x138)
+0x1F140E4 BL  0x1F13D14       ; RefreshShownValue
+
+; FirstBootViewInputBirthData.OnYearChageValue(int index)
+0x1C80FD4 LDR X0,[X19,#64]   ; yearOptionDataList (+0x40)
+0x1C80FE4 B.LE ...            ; range-check index
+0x1C81008 BL 0x3782360       ; parse OptionData.m_Text numeric
+0x1C81018 STR W0,[X19,#88]   ; inputedYear (+0x58)
+```
+
+因此，**静态上**已闭合“下拉选中某个整数 index → 列表解析年份文字 → 写入客户端本地 inputedYear”的路径。但是 Frida 的 `OnYearChageValue` 并未实测命中；只有在真实运行中读取到 `1999` 的正确选项索引、方法实际被调用且本地 UI 显示 `1999` 后，才可以声称选中了 1999。更不能用调用客户端 setter 推断生日已提交服务器。
+
+当前公开 ARM64 agent 在 `ci/home41_arm64_auth_timeline.js` 增加只读 `SetData/OnYearChageValue/OnMonthChangeValue/OnDayChangeValue` 观察和 `yearOptionDataList` 查找。Action 以 `ci/home41_emulator_arm64_realm.py` 严格脱敏输出，只在模拟器中安装 Hook、不发出修改应用内存的指令。
