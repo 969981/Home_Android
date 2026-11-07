@@ -81,7 +81,7 @@ function readYearOptionText(optionPtr) {
     const str = optionPtr.add(0x10).readPointer();
     if (str.isNull() || str.add(0x10).readS32() !== 4) return null;
     const value = str.add(0x14).readUtf16String(4);
-    return /^\\d{4}$/.test(value) ? value : null;
+    return /^\d{4}$/.test(value) ? value : null;
   } catch (_) {
     return null;
   }
