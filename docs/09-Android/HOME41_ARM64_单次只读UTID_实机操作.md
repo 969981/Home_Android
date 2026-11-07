@@ -119,3 +119,11 @@ py -3 ci/home41_arm64_runtime_acceptance.py --apk "$apk" --target 888888 --timeo
 - **没有连接真实 ARM64 Android、没有访问 HOME 注册服务、没有执行真的 `SetBasic` 回调、没有得到真正的六位 ID。** 假 Frida 事件只用于验证控制程序不会误报或删除 APP 数据。
 
 下一项唯一真正缺失的证据：原生 ARM64 Android 设备的动态 `SetBasic` 入口命中、官方 UI ID 与回调值一致、冷启动后第二次命中与官方显示同号。GitHub 托管 x86_64 模拟器不能代替这项验收。
+
+
+### 2026-11-07 最新 CI 回归：9 + 11 测试通过
+
+- 最终验证：[Actions #42361056992](https://github.com/969981/Home_Android/actions/runs/42361056992)，共 9 项两阶段流程夹具与 11 项单次 Hook/输出防泄露夹具，**20/20 通过**，Frida JS 已通过 `node --check`。
+- 新增约束：仅收到 Android `am force-stop` 退出码不足以宣称冷启动。必须再通过 ADB 确认**旧 HOME 进程确实消失**；否则记录 `previous_home_process_still_alive` 并停止第二阶段。
+- 新增离线负例：模拟 `force-stop` 返回成功但进程仍在，确认脚本拒绝宣称 `REAL_DEVICE_THREE_GATES_PASSED`。
+- 实际设备尚未连接到当前执行环境，因此 **`UDManager.SetBasic` 的真实动态命中、官方六位 ID 对账、冷启动同号三项仍未实测**。单元测试不能替代这些证据。
