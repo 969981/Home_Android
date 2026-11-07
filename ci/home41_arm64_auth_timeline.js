@@ -40,6 +40,8 @@ const RVA = Object.freeze({
   birthOnMonthChange: 0x1C814C0,
   birthOnDayChange: 0x1C8181C,
   customDropdownShow: 0x1F14920,
+  customDropdownScrollOpen: 0x1F14C90,
+  customDropdownOnSelectItem: 0x1F15084,
   customDropdownSetValue: 0x1F14014
 });
 const begun = Date.now();
@@ -58,7 +60,9 @@ const counts = {
   firstboot_birthdata_setdata_entered: 0,
   firstboot_birthdata_year_change_entered: 0,
   firstboot_birthdata_month_change_entered: 0,
-  firstboot_birthdata_day_change_entered: 0
+  firstboot_birthdata_day_change_entered: 0,
+  firstboot_year_scroll_open_entered: 0,
+  firstboot_year_item_selection_entered: 0
 };
 const LIMIT_PER_EVENT = 16;
 let hooksReady = false;
@@ -78,6 +82,10 @@ let optInYearSetArmed = false;
 let localYearSetAttempted = false;
 let localYearSetterReturned = false;
 let localYearSetterFailure = false;
+let yearScrollOpenInputIndex = null;
+let yearScrollOpenInputEquals1999 = false;
+let yearItemSelectedIndex = null;
+let yearItemSelectionCount = 0;
 let optInMonthSetArmed = false, optInDaySetArmed = false;
 let localMonthSetAttempted = false, localDaySetAttempted = false;
 let localMonthSetterReturned = false, localDaySetterReturned = false;
@@ -267,6 +275,10 @@ rpc.exports = {
         year_setter_attempted: localYearSetAttempted,
         year_setter_returned: localYearSetterReturned,
         year_setter_failure: localYearSetterFailure,
+        year_scroll_open_input_index: yearScrollOpenInputIndex,
+        year_scroll_open_input_equals_1999: yearScrollOpenInputEquals1999,
+        year_item_selection_count: yearItemSelectionCount,
+        year_item_selected_index: yearItemSelectedIndex,
         month_setter_attempted: localMonthSetAttempted,
         month_setter_returned: localMonthSetterReturned,
         month_setter_failure: localMonthSetterFailure,
@@ -476,6 +488,49 @@ function install(lib) {
   // invoking Unity setters from Frida's RPC worker thread.
   const originalSetValue = new NativeFunction(
     ptr(RVA.customDropdownSetValue), 'void', ['pointer', 'int']);
+  // Native UI scroll lifecycle: observe the *actual Open(int value)* input.
+  // Being open at 2026 with m_Value 27 is not itself proof of an Open bug:
+  // here we distinguish what the original ScrollList receives.
+  hook('birthyear_scroll_open', RVA.customDropdownScrollOpen, {
+    onEnter(args) {
+      try {
+        if (birthViewPtr === null) return;
+        const year = birthViewPtr.add(0x28).readPointer();
+        if (year.isNull()) return;
+        const scrollList = year.add(0x128).readPointer();
+        if (scrollList.isNull() || !args[0].equals(scrollList)) return;
+        const idx = args[1].toInt32();
+        if (idx < -1 || idx > 126) return;
+        yearScrollOpenInputIndex = idx;
+        yearScrollOpenInputEquals1999 = idx === 27;
+        milestone('firstboot_year_scroll_open_entered', {
+          year_target_index_27_requested: idx === 27
+        });
+      } catch (_) {
+        emit('year_scroll_open_unreadable');
+      }
+    }
+  });
+  // OnSelectItem is the original UI item-selection pipeline, unlike
+  // CustomTMPDropdown.set_value which only updates selected numeric state.
+  hook('birthyear_item_selected', RVA.customDropdownOnSelectItem, {
+    onEnter(args) {
+      try {
+        if (birthViewPtr === null) return;
+        const year = birthViewPtr.add(0x28).readPointer();
+        const idx = args[1].toInt32();
+        if (year.isNull() || !year.equals(args[0]) || idx < 0 || idx > 126)
+          return;
+        yearItemSelectedIndex = idx;
+        yearItemSelectionCount++;
+        milestone('firstboot_year_item_selection_entered', {
+          year_target_index_27_selected: idx === 27
+        });
+      } catch (_) {
+        emit('year_item_selection_unreadable');
+      }
+    }
+  });
   hook('birthdate_dropdown_show', RVA.customDropdownShow, {
     onEnter(args) {
       this.yearTarget = null;
