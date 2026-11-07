@@ -208,11 +208,15 @@ class ARM64RealmStageMonitor(StageMonitor):
     def __init__(self, server: Path, network_script: Path, arm64_script: Path,
                  select_year_1999: bool=False,
                  select_month_day: bool=False,
-                 probe_native_year_select: bool=False):
+                 probe_native_year_select: bool=False,
+                 probe_native_full_date_select: bool=False):
         super().__init__(server, network_script)
         self.select_year_1999 = select_year_1999
         self.select_month_day = select_month_day
         self.probe_native_year_select = probe_native_year_select
+        self.probe_native_full_date_select = probe_native_full_date_select
+        self.native_month_select_arm_result = "not_attempted"
+        self.native_day_select_arm_result = "not_attempted"
         self.native_year_select_arm_result = "not_attempted"
         self.local_month_arm_result = "not_attempted"
         self.local_day_arm_result = "not_attempted"
@@ -294,6 +298,36 @@ class ARM64RealmStageMonitor(StageMonitor):
                 "frida_rpc_error_" + type(err).__name__)
             return False
 
+    def arm_native_month_item_select(self) -> bool:
+        if (not self.probe_native_full_date_select or not self.arm64_agent or
+                self.arm64_realm_status != "emulated_realm_attached"):
+            self.native_month_select_arm_result = "not_eligible"
+            return False
+        try:
+            ok=self.arm64_agent.exports_sync.armnativemonthitemselect()
+            self.native_month_select_arm_result = (
+                "guarded_native_month_onselect_armed" if ok
+                else "native_month_onselect_preflight_rejected")
+            return ok is True
+        except Exception as err:
+            self.native_month_select_arm_result="frida_rpc_error_"+type(err).__name__
+            return False
+
+    def arm_native_day_item_select(self) -> bool:
+        if (not self.probe_native_full_date_select or not self.arm64_agent or
+                self.arm64_realm_status != "emulated_realm_attached"):
+            self.native_day_select_arm_result = "not_eligible"
+            return False
+        try:
+            ok=self.arm64_agent.exports_sync.armnativedayitemselect()
+            self.native_day_select_arm_result = (
+                "guarded_native_day_onselect_armed" if ok
+                else "native_day_onselect_preflight_rejected")
+            return ok is True
+        except Exception as err:
+            self.native_day_select_arm_result="frida_rpc_error_"+type(err).__name__
+            return False
+
     def arm_local_month_4(self) -> bool:
         if (not self.select_month_day or not self.arm64_agent or
                 self.arm64_realm_status != "emulated_realm_attached"):
@@ -332,6 +366,8 @@ class ARM64RealmStageMonitor(StageMonitor):
             "events": list(self.arm64_events),
             "local_year_set_arm_result": self.local_year_set_arm_result,
             "native_year_select_arm_result": self.native_year_select_arm_result,
+            "native_month_select_arm_result": self.native_month_select_arm_result,
+            "native_day_select_arm_result": self.native_day_select_arm_result,
             "local_month_arm_result": self.local_month_arm_result,
             "local_day_arm_result": self.local_day_arm_result,
             "raw_utid_saved": False,
@@ -368,6 +404,8 @@ def main() -> int:
                         help="OPT IN: one original Unity dropdown setter call; no date submission")
     parser.add_argument("--select-local-month-day", action="store_true",
                         help="OPT IN: original Unity month/day setters after verified 1999; no form submission")
+    parser.add_argument("--probe-native-full-date-select", action="store_true",
+                        help="Opt in: original OnSelectItem for 1999, April, May 5, never submit")
     parser.add_argument("--probe-native-year-select", action="store_true",
                         help="Opt in: call original OnSelectItem(27) on Unity thread after fully verified internal date")
     parser.add_argument("--probe-year-touch-scroll", action="store_true",
@@ -381,7 +419,9 @@ def main() -> int:
         args.server, args.network_script, args.arm64_script,
         select_year_1999=args.select_local_year_1999,
         select_month_day=args.select_local_month_day,
-        probe_native_year_select=args.probe_native_year_select)
+        probe_native_year_select=(
+            args.probe_native_year_select or args.probe_native_full_date_select),
+        probe_native_full_date_select=args.probe_native_full_date_select)
     report = diag.run(
         args.apk, args.output, settle=max(3,min(60,args.settle_seconds)),
         observer=observer, select_china_mainland=True,
@@ -390,7 +430,9 @@ def main() -> int:
         select_local_year_1999=args.select_local_year_1999,
         select_local_month_day=args.select_local_month_day,
         probe_year_touch_scroll=args.probe_year_touch_scroll,
-        probe_native_year_select=args.probe_native_year_select)
+        probe_native_year_select=(
+            args.probe_native_year_select or args.probe_native_full_date_select),
+        probe_native_full_date_select=args.probe_native_full_date_select)
     obs = report.get("stage_monitor", {})
     arm = obs.get("arm64_emulated_realm", {})
     snapshot = arm.get("snapshot", {})
@@ -413,6 +455,8 @@ def main() -> int:
         "local_month_setter_armed": arm.get("local_month_arm_result"),
         "local_day_setter_armed": arm.get("local_day_arm_result"),
         "native_year_select_arm_result": arm.get("native_year_select_arm_result"),
+        "native_month_select_arm_result": arm.get("native_month_select_arm_result"),
+        "native_day_select_arm_result": arm.get("native_day_select_arm_result"),
         "local_month_day_probe": report.get("local_month_day_probe"),
         "frida_x64_status": obs.get("status"),
         "arm64_emulated_status": arm.get("status"),
