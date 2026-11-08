@@ -56,6 +56,8 @@ _ALLOWED_AGENT_EVENTS = frozenset({
     "firstboot_controller_start_entered",
     "firstboot_contents_first_entered",
     "firstboot_confirmation_terms_entered",
+    "firstboot_confirmation_advertisement_sdk_entered",
+    "firstboot_go_to_phase_entered",
     "year_native_item_select_armed",
     "year_native_item_select_returned",
     "year_native_item_select_failed",
@@ -210,11 +212,22 @@ def sanitize_firstboot_ui(raw: object) -> dict:
     raw_index = source.get("original_phase_enum_index")
     index = raw_index if type(raw_index) is int and 0 <= raw_index <= 128 else None
     mapped = index is not None and index < len(FIRSTBOOT_PHASE_NAMES)
+    requested_raw = source.get("last_requested_phase_enum_index")
+    requested = (requested_raw if type(requested_raw) is int
+                 and 0 <= requested_raw <= 128 else None)
+    requested_mapped = (requested is not None
+                        and requested < len(FIRSTBOOT_PHASE_NAMES))
     return {
         "original_controller_seen": source.get("original_controller_seen") is True,
         "original_phase_enum_index": index,
         "original_phase_name": FIRSTBOOT_PHASE_NAMES[index] if mapped else None,
         "original_phase_mapping_verified": bool(mapped),
+        "last_requested_phase_enum_index": requested,
+        "last_requested_phase_name": (
+            FIRSTBOOT_PHASE_NAMES[requested] if requested_mapped else None),
+        "go_to_phase_hook_attached": source.get("go_to_phase_hook_attached") is True,
+        "advertisement_sdk_hook_attached": (
+            source.get("advertisement_sdk_hook_attached") is True),
     }
 
 
@@ -271,6 +284,7 @@ class ARM64RealmStageMonitor(StageMonitor):
         self.arm64_error_type = None
         self.arm64_events = []
         self.arm64_script_error = False
+        self.keep_arm64_attached = False
 
     def _on_arm64_message(self, message, _data):
         if isinstance(message, dict) and message.get("type") == "error":
@@ -448,11 +462,13 @@ class ARM64RealmStageMonitor(StageMonitor):
                     self.arm64_agent.exports_sync.snapshot())
             except Exception as err:
                 evidence["snapshot_error_type"] = type(err).__name__
-        if self.arm64_session:
+        if self.arm64_session and not self.keep_arm64_attached:
             try:
                 self.arm64_session.detach()
             except Exception:
                 evidence["detach_status"] = "failed"
+        if self.keep_arm64_attached:
+            self.keep_forward_open = True
         result = super().finish()
         result["arm64_emulated_realm"] = evidence
         return result
@@ -529,6 +545,10 @@ def main() -> int:
                         help="LOCAL TTY only: prepare verified 1999/4/5 then observe ONE manually completed original signup; never click Terms")
     parser.add_argument("--registration-timeout", type=int, default=1200,
                         help="Local Frida first-basic observer wait, 1..3600 seconds")
+    parser.add_argument("--probe-terms-next-phase-once", action="store_true",
+                        help="One disposable-AVD Terms confirmation followed by read-only native phase snapshot; never register")
+    parser.add_argument("--authorize-terms-next-phase-once", action="store_true",
+                        help="Explicit one-run authorization for original Terms UI on this disposable AVD")
     parser.add_argument("--advance-birthday-once", action="store_true",
                         help="Opt in: after native/UI full-date verification, tap only age form Next once; no Terms consent")
     parser.add_argument("--probe-native-full-date-select", action="store_true",
@@ -559,6 +579,12 @@ def main() -> int:
             return 2
         print("[LOCAL ONLY] Prepare one HOME 4.1.0 setup in this persistent emulator.")
         print("[LOCAL ONLY] No account deletion, reset, scripted Terms acceptance or repeated signup.")
+    if args.probe_terms_next_phase_once:
+        if not (args.authorize_terms_next_phase_once and
+                args.advance_birthday_once and
+                args.probe_native_full_date_select):
+            print('{"status":"terms_phase_probe_requires_explicit_optin_and_verified_age_flow"}')
+            return 2
     observer = ARM64RealmStageMonitor(
         args.server, args.network_script, args.arm64_script,
         select_year_1999=args.select_local_year_1999,
@@ -566,6 +592,7 @@ def main() -> int:
         probe_native_year_select=(
             args.probe_native_year_select or args.probe_native_full_date_select),
         probe_native_full_date_select=args.probe_native_full_date_select)
+    observer.keep_arm64_attached = args.probe_terms_next_phase_once
     report = diag.run(
         args.apk, args.output, settle=max(3,min(60,args.settle_seconds)),
         observer=observer, select_china_mainland=True,
