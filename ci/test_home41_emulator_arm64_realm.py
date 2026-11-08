@@ -405,9 +405,11 @@ class AssistedSingleAccountGuardTests(unittest.TestCase):
                 "--assisted-single-signup",
                 "--probe-birthday-year", "--select-local-year-1999",
                 "--select-local-month-day", "--probe-native-full-date-select"]
+        fake_tty = SimpleNamespace(isatty=lambda: True, write=lambda _: None,
+                                   flush=lambda: None)
         with patch.object(sys, "argv", argv), patch.dict(
                 "os.environ", {"GITHUB_ACTIONS": "true"}), patch.object(
-                    sys.stdout, "isatty", return_value=True):
+                    sys, "stdout", fake_tty):
             self.assertEqual(mod.main(), 2)
 
 
