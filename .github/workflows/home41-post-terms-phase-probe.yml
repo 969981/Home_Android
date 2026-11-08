@@ -1,0 +1,148 @@
+name: HOME 4.1.0 post-Terms native FirstBoot phase (one disposable AVD)
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/home41-post-terms-phase-probe.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: home41-post-terms-phase-probe-once
+  cancel-in-progress: false
+
+jobs:
+  post-terms-phase:
+    if: contains(github.event.head_commit.message, '[home41-post-terms-phase-once]')
+    name: Observe native FirstBoot phase after original Terms Next
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Compile and run read-only evidence guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q pillow 'frida==17.26.1'
+          python -m py_compile \
+            ci/home41_emulator_arm64_realm.py \
+            ci/home41_emulator_stage_frida.py \
+            ci/home41_arm64_auth_timeline.py \
+            ci/home41_post_age_terms_fingerprint.py \
+            ci/home41_post_terms_phase.py \
+            ci/home41_terms_probe.py \
+            ci/home41_terms_visual_capture.py \
+            ci/home41_terms_checkbox_ab.py \
+            ci/home41_terms_both_and_next.py
+          node --check ci/home41_arm64_auth_timeline.js
+          python -m unittest discover -s ci -p 'test_home41_post_terms_phase.py' -v
+          python -m unittest discover -s ci -p 'test_home41_phase_transition_hooks.py' -v
+          python -m unittest discover -s ci -p 'test_home41_terms_checkbox_ab.py' -v
+          python -m unittest discover -s ci -p 'test_home41_terms_both_and_next.py' -v
+          python -m unittest discover -s ci -p 'test_home41_terms_visual_capture.py' -v
+          python -m unittest discover -s ci -p 'test_home41_post_age_terms_fingerprint.py' -v
+
+      - name: Verify exact original signed HOME 4.1.0 APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find ROMS/4.1.0 -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          test "$(sha256sum "$APK" | cut -d' ' -f1)" = '8dee598028cd70441f645c8fff96b093b76778d625cdf07c60109eced50ffac1'
+          echo "HOME41_APK=$APK" >> "$GITHUB_ENV"
+          mkdir -p ci-frida-results
+
+      - name: Download matching Frida server (retry transient GitHub release failures)
+        shell: bash
+        run: |
+          set -euo pipefail
+          FRIDA_VERSION="$(python -c 'import frida; print(frida.__version__)')"
+          test "$FRIDA_VERSION" = "17.26.1"
+          curl -fLsS --retry 7 --retry-all-errors --retry-delay 3 --retry-max-time 420 \
+            --connect-timeout 20 --max-time 180 \
+            "https://github.com/frida/frida/releases/download/$FRIDA_VERSION/frida-server-$FRIDA_VERSION-android-x86_64.xz" \
+            -o /tmp/home41_frida_server.xz
+          xz -dc /tmp/home41_frida_server.xz > /tmp/home41_frida_server
+          chmod 700 /tmp/home41_frida_server
+          echo "HOME41_FRIDA_SERVER=/tmp/home41_frida_server" >> "$GITHUB_ENV"
+
+      - name: Enable KVM
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -e /dev/kvm
+
+      - name: Original age page, Terms UI once, then native phase snapshot
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          ram-size: 4096M
+          heap-size: 512M
+          disable-animations: true
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: |
+            set -e
+            python ci/home41_emulator_arm64_realm.py \
+              --apk "$HOME41_APK" \
+              --output ci-frida-results \
+              --server "$HOME41_FRIDA_SERVER" \
+              --settle-seconds 10 \
+              --probe-birthday-year \
+              --select-local-year-1999 \
+              --select-local-month-day \
+              --probe-native-full-date-select \
+              --advance-birthday-once \
+              --probe-terms-next-phase-once \
+              --authorize-terms-next-phase-once
+
+      - name: Upload only masked Terms UI and categorical phase proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: home41-post-terms-native-phase
+          path: |
+            ci-frida-results/home41_post_terms_phase_report.json
+            ci-frida-results/home41_post_age_terms_fingerprint.json
+            ci-frida-results/home41_terms_phase3/before_masked.png
+            ci-frida-results/home41_terms_phase3/both_checked_masked.png
+            ci-frida-results/home41_terms_phase3/terms_once_status.json
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: State evidence boundary
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report=Path("ci-frida-results/home41_post_terms_phase_report.json")
+          with open(__import__("os").environ["GITHUB_STEP_SUMMARY"],"a",encoding="utf-8") as out:
+              out.write("\n## HOME 4.1.0 post-Terms native phase\n\n")
+              if report.is_file():
+                  obj=json.loads(report.read_text(encoding="utf-8"))
+                  out.write("- Status: "+str(obj.get("status"))+"\n")
+                  phase=obj.get("native_phase",{})
+                  for key in ("current_phase_index","current_phase_name",
+                              "last_requested_phase_index","last_requested_phase_name",
+                              "advertisement_sdk_method_entries","go_to_phase_entries"):
+                      out.write(f"- {key}: {phase.get(key)}\n")
+                  terms=obj.get("terms_ui",{})
+                  out.write("- Terms Next tapped once: "+str(terms.get("terms_next_tapped"))+"\n")
+                  out.write("- New page observed: "+str(terms.get("post_terms_page_changed"))+"\n")
+              else:
+                  out.write("- No phase report; preflight/setup did not complete.\n")
+              out.write("\nNo registration, Nintendo Account linking, UTID, token, HTTP body or post-Next screenshot is captured.\n")
+          PY
