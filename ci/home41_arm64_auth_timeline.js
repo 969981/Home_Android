@@ -53,7 +53,9 @@ const RVA = Object.freeze({
   firstBootBodyStart: 0x1DDFAF0,
   firstBootBodyDestroy: 0x1DDFD6C,
   firstBootContentsFirst: 0x1DE1D84,
-  firstBootConfirmTerms: 0x1DE2E4C
+  firstBootConfirmTerms: 0x1DE2E4C,
+  firstBootConfirmAdvertisementSDK: 0x1DE30E8,
+  firstBootGoToPhase: 0x1DE1C10
 });
 const begun = Date.now();
 const counts = {
@@ -81,7 +83,9 @@ const counts = {
   terms_confirm_dialog_ok_clicked: 0,
   firstboot_controller_start_entered: 0,
   firstboot_contents_first_entered: 0,
-  firstboot_confirmation_terms_entered: 0
+  firstboot_confirmation_terms_entered: 0,
+  firstboot_confirmation_advertisement_sdk_entered: 0,
+  firstboot_go_to_phase_entered: 0
 };
 const LIMIT_PER_EVENT = 16;
 let hooksReady = false;
@@ -95,6 +99,9 @@ let nativeModuleReady = false;
 // Original FirstBootBodyController._currentPhase at +0xEC, from 4.1.0 dump.cs.
 // Its numerical value is an unverified enum until independent mapping.
 let firstBootBodyPtr = null;
+let lastRequestedFirstBootPhaseIndex = null;
+let firstBootGoToPhaseHookAttached = false;
+let firstBootAdvertisementSDKHookAttached = false;
 function readCurrentFirstBootPhase() {
   if (firstBootBodyPtr === null) return null;
   try {
@@ -327,6 +334,9 @@ rpc.exports = {
         original_controller_seen: firstBootBodyPtr !== null,
         original_phase_enum_index: readCurrentFirstBootPhase(),
         original_phase_mapping_verified: false,
+        last_requested_phase_enum_index: lastRequestedFirstBootPhaseIndex,
+        go_to_phase_hook_attached: firstBootGoToPhaseHookAttached,
+        advertisement_sdk_hook_attached: firstBootAdvertisementSDKHookAttached
       },
       birthdate_ui: {
         ...readBirthdateUIState(),
@@ -569,6 +579,26 @@ function install(lib) {
       onEnter(args) {
         firstBootBodyPtr = args[0];
         milestone('firstboot_confirmation_terms_entered');
+      }
+    });
+    Interceptor.attach(ptr(RVA.firstBootConfirmAdvertisementSDK), {
+      onEnter(args) {
+        firstBootBodyPtr = args[0];
+        firstBootAdvertisementSDKHookAttached = true;
+        milestone('firstboot_confirmation_advertisement_sdk_entered');
+      }
+    });
+    Interceptor.attach(ptr(RVA.firstBootGoToPhase), {
+      onEnter(args) {
+        firstBootBodyPtr = args[0];
+        try {
+          const requested = args[1].toInt32();
+          if (Number.isInteger(requested) && requested >= 0 && requested <= 128) {
+            lastRequestedFirstBootPhaseIndex = requested;
+            milestone('firstboot_go_to_phase_entered', {phase_index: requested});
+          }
+        } catch (_) {}
+        firstBootGoToPhaseHookAttached = true;
       }
     });
     Interceptor.attach(ptr(RVA.firstBootBodyDestroy), {
