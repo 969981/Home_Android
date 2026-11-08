@@ -63,6 +63,8 @@ EVENT_NAMES = frozenset({
     "firstboot_controller_start_entered",
     "firstboot_contents_first_entered",
     "firstboot_confirmation_terms_entered",
+    "firstboot_confirmation_advertisement_sdk_entered",
+    "firstboot_go_to_phase_entered",
     "year_native_item_select_armed",
     "year_native_item_select_returned",
     "year_native_item_select_failed",
@@ -90,7 +92,7 @@ OBSERVER_NAMES = frozenset({
     "login_callback", "common_response", "set_basic",
     "firstboot_clause", "firstboot_terms_setup",
     "firstboot_checkbox", "terms_dialog_open", "terms_dialog_ok",
-    "firstboot_phase"
+    "firstboot_phase", "firstboot_advertisement_sdk", "firstboot_go_to_phase"
 })
 TIMELINE_FIELDS = frozenset({
     "event", "elapsed_ms", "index", "observer", "reason",
@@ -126,6 +128,9 @@ def sanitize_timeline_event(message: object) -> dict | None:
     ms = source.get("elapsed_ms")
     if type(ms) is int and 0 <= ms < 86400000:
         clean["elapsed_ms"] = ms
+    phase_index = source.get("phase_index")
+    if type(phase_index) is int and 0 <= phase_index <= 128:
+        clean["phase_index"] = phase_index
     index = source.get("index")
     if type(index) is int and 1 <= index <= 16:
         clean["index"] = index
