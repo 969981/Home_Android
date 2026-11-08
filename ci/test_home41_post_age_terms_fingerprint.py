@@ -40,6 +40,41 @@ class PostAgeFingerprintTests(unittest.TestCase):
         self.assertNotIn("tap", result)
         self.assertNotIn("text", result)
 
+    def test_native_terms_source_hint_does_not_claim_visible_or_agreed(self):
+        age = self.report()
+        age["stage_monitor"] = {"arm64_emulated_realm": {
+            "snapshot": {
+                "native_arm64": True, "hooks_ready": True,
+                "counts": {
+                    "firstboot_terms_confirmation_setup_entered": 2,
+                    "firstboot_clause_agree_part_entered": 3,
+                    "firstboot_agreement_checkbox_changed": 0,
+                    "terms_confirm_dialog_open_entered": 0,
+                    "terms_confirm_dialog_ok_clicked": 0,
+                    "raw_utid": "SHOULD_NOT_LEAK",
+                }
+            }
+        }}
+        result = fingerprint(age, self.focus(), "<hierarchy/>")
+        self.assertTrue(result["native_terms_setup_event_seen"])
+        self.assertTrue(result["native_clause_creation_event_seen"])
+        self.assertFalse(result["native_checkbox_change_event_seen"])
+        self.assertFalse(result["native_terms_page_visible_verified"])
+        self.assertFalse(result["terms_click_attempted"])
+        self.assertNotIn("SHOULD_NOT_LEAK", repr(result))
+        self.assertEqual(result["status"], "post_age_screen_not_accessible_as_terms")
+
+    def test_untrusted_boolean_native_count_is_not_positive_hit(self):
+        age = self.report()
+        age["stage_monitor"] = {"arm64_emulated_realm": {
+            "snapshot": {
+                "native_arm64": True, "hooks_ready": True,
+                "counts": {"firstboot_terms_confirmation_setup_entered": True}
+            }
+        }}
+        result = fingerprint(age, self.focus(), "<hierarchy/>")
+        self.assertFalse(result["native_terms_setup_event_seen"])
+
     def test_foreign_overlay_untrusted(self):
         xml = '''<hierarchy>
           <node package="com.other" text="Terms of Use"/>
