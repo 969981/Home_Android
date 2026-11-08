@@ -1,22 +1,14 @@
 name: HOME 4.1.0 one-step verified birthday Next (no Terms acceptance)
 
 on:
-  push:
-    branches: [master]
-    paths:
-      - '.github/workflows/home41-emulator-next-screen.yml'
-      - 'ci/home41_emulator_arm64_realm.py'
-      - 'ci/home41_emulator_diagnostics.py'
-      - 'ci/home41_emulator_stage_frida.py'
-      - 'ci/test_home41_emulator_stage_frida.py'
-      - 'ci/test_home41_emulator_arm64_realm.py'
-      - 'ci/home41_arm64_auth_timeline.js'
-      - 'ci/home41_arm64_auth_timeline.py'
-      - 'ci/home41_emulator_diagnostics.py'
-      - 'ci/home41_emulator_stage_frida.py'
-      - 'ci/home41_emulator_network_meta.js'
-      - 'ci/test_home41_emulator_stage_frida.py'
+  # Never run the one-step birthday Next probe on push or scheduled events.
+  # This is NOT part of the safe local date-picker verification workflow.
   workflow_dispatch:
+    inputs:
+      confirm_birthday_next:
+        description: 'Type I_AUTHORIZE_LOCAL_BIRTHDAY_NEXT to allow exactly one birthday Next tap'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -27,6 +19,8 @@ concurrency:
 
 jobs:
   live-emulator:
+    # A manual dispatch alone must not advance the official birthday form.
+    if: ${{ inputs.confirm_birthday_next == 'I_AUTHORIZE_LOCAL_BIRTHDAY_NEXT' }}
     name: Single original age-page Next after 1999-04-05, stop before Terms
     runs-on: ubuntu-24.04
     timeout-minutes: 55
