@@ -164,7 +164,9 @@ def main() -> int:
         # next page is retained; no other UI action is attempted.
         try:
             next_page=snap()
-            state["post_terms_page_changed"]=substantial_page_transition(ready,next_page)
+            state["post_terms_page_changed"]=(
+                terms_ui_signature(next_page,False) is None
+                and substantial_page_transition(ready,next_page))
             state["status"]=("terms_next_clicked_new_page_seen"
                              if state["post_terms_page_changed"]
                              else "terms_next_clicked_but_transition_unverified")
