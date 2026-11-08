@@ -28,6 +28,8 @@ class TermsVisualCaptureGateTests(unittest.TestCase):
                         "firstboot_ui": {
                             "original_controller_seen": True,
                             "original_phase_enum_index": 3,
+                            "original_phase_name": "TERM_OF_SERVICE",
+                            "original_phase_mapping_verified": True,
                         },
                     },
                 },
@@ -38,6 +40,8 @@ class TermsVisualCaptureGateTests(unittest.TestCase):
             "home_foreground": True,
             "native_firstboot_controller_seen": True,
             "native_firstboot_phase_index": 3,
+            "native_firstboot_phase_name": "TERM_OF_SERVICE",
+            "native_firstboot_phase_mapping_verified": True,
             "native_firstboot_confirmation_terms_entered": True,
             "terms_click_attempted": False,
             "account_registration_attempted": False,
