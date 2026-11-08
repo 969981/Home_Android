@@ -190,16 +190,31 @@ def sanitize_birth_ui(raw: object) -> dict:
     }
 
 
+# Verified original IL2CppDumper dump.cs:
+# public enum FirstBootBodyController.Phase // TypeDefIndex: 1949.
+FIRSTBOOT_PHASE_NAMES = (
+    "NONE", "LANGUAGE", "MD_DOWNLOAD", "TERM_OF_SERVICE",
+    "ADVERTISEMENT_SDK", "WARNING", "APPLE_ID_LINK",
+    "NA_LINK_CONTINUE", "NA_LINK_BEGIN", "NA_LINK_PROCEDURE",
+    "NA_LINK_PROCEDURE_WAIT", "NA_LIMK_SUCCESS", "NA_LINK_FAILD",
+    "NA_NOT_LINK", "MT_LOGIN", "MT_SELECT_ICON", "MT_INPUT_NAME",
+    "MT_INPUT_BIRTH", "MT_SELECT_COUNTRY", "MT_CONFIRMATION",
+    "MT_MOVING", "PROLOGUE", "PROLOGUE2",
+    "GEST_CONFIRMATION", "ALL_END", "ATT",
+)
+
+
 def sanitize_firstboot_ui(raw: object) -> dict:
-    """Read-only original FirstBoot phase, never managed pointers or text."""
+    """Read-only native Phase enum with values from ORIGINAL 4.1.0 dump.cs."""
     source = raw if isinstance(raw, dict) else {}
-    index = source.get("original_phase_enum_index")
+    raw_index = source.get("original_phase_enum_index")
+    index = raw_index if type(raw_index) is int and 0 <= raw_index <= 128 else None
+    mapped = index is not None and index < len(FIRSTBOOT_PHASE_NAMES)
     return {
         "original_controller_seen": source.get("original_controller_seen") is True,
-        "original_phase_enum_index": (
-            index if type(index) is int and 0 <= index <= 128 else None
-        ),
-        "original_phase_mapping_verified": False,
+        "original_phase_enum_index": index,
+        "original_phase_name": FIRSTBOOT_PHASE_NAMES[index] if mapped else None,
+        "original_phase_mapping_verified": bool(mapped),
     }
 
 
