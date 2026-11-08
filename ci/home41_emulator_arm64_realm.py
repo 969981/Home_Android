@@ -5,13 +5,18 @@ Try Frida 17.26.1 device.attach(pid, realm='emulated') after successfully
 attaching in the normal x64 realm, then run the existing ARM64 IL2CPP read-only
 auth timeline IN THE EMULATED REALM only if the host supports it.
 
-No registration, birth date, Terms, Nintendo link, account deletion, network
-replay, HTTP payloads or tokens. All published evidence is allowlisted.
+Default mode never registers, submits a birth date, accepts Terms, links a
+Nintendo Account, deletes an account, or saves tokens. A separately opted-in,
+LOCAL interactive single-account assistant prepares the verified 1999/4/5 UI,
+then leaves every official registration/consent action to the person at the
+device while ARM64 Frida observes the first basic.utid privately.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 import time
 from pathlib import Path
 
@@ -415,6 +420,63 @@ class ARM64RealmStageMonitor(StageMonitor):
         return result
 
 
+def confirmed_local_date_for_assisted_signup(report: object) -> bool:
+    """Require native, visual, and privacy gates before manual registration.
+
+    True proves only the local HOME birthdate UI, never account creation.
+    """
+    if not isinstance(report, dict):
+        return False
+    if report.get("process_at_end") is not True:
+        return False
+    if report.get("birthday_submitted") is not False:
+        return False
+    if report.get("registration_status") != "not_attempted":
+        return False
+    if report.get("terms_accepted") is not False:
+        return False
+    if report.get("account_delete_attempted") is not False:
+        return False
+    probe = report.get("local_month_day_probe")
+    if not isinstance(probe, dict) or not all(
+        probe.get(k) is True for k in (
+            "year_caption_roi_changed",
+            "month_caption_roi_changed",
+            "day_caption_roi_changed",
+            "native_year_item_select_armed",
+            "native_month_item_select_armed",
+            "native_day_item_select_armed",
+        )
+    ):
+        return False
+    stage = report.get("stage_monitor")
+    if not isinstance(stage, dict):
+        return False
+    realm = stage.get("arm64_emulated_realm")
+    if not isinstance(realm, dict) or realm.get("status") != "emulated_realm_attached":
+        return False
+    snapshot = realm.get("snapshot")
+    if not isinstance(snapshot, dict):
+        return False
+    if snapshot.get("native_arm64") is not True or snapshot.get("hooks_ready") is not True:
+        return False
+    ui = snapshot.get("birthdate_ui")
+    return isinstance(ui, dict) and all(
+        ui.get(k) is True for k in (
+            "exact_birthdate_selected",
+            "inputed_year_equals_1999",
+            "inputed_month_equals_4",
+            "inputed_day_equals_5",
+            "year_dropdown_is_selected",
+            "month_dropdown_is_selected",
+            "day_dropdown_is_selected",
+            "native_year_item_select_confirmed",
+            "native_month_item_select_confirmed",
+            "native_day_item_select_confirmed",
+        )
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apk", type=Path, required=True)
@@ -429,6 +491,10 @@ def main() -> int:
                         help="OPT IN: one original Unity dropdown setter call; no date submission")
     parser.add_argument("--select-local-month-day", action="store_true",
                         help="OPT IN: original Unity month/day setters after verified 1999; no form submission")
+    parser.add_argument("--assisted-single-signup", action="store_true",
+                        help="LOCAL TTY only: prepare verified 1999/4/5 then observe ONE manually completed original signup; never click Terms")
+    parser.add_argument("--registration-timeout", type=int, default=1200,
+                        help="Local Frida first-basic observer wait, 1..3600 seconds")
     parser.add_argument("--advance-birthday-once", action="store_true",
                         help="Opt in: after native/UI full-date verification, tap only age form Next once; no Terms consent")
     parser.add_argument("--probe-native-full-date-select", action="store_true",
@@ -442,6 +508,23 @@ def main() -> int:
     parser.add_argument("--probe-year-dpad", action="store_true",
                         help="On verified open year list send one non-selecting DPAD_DOWN key")
     args = parser.parse_args()
+    if args.assisted_single_signup:
+        if os.environ.get("GITHUB_ACTIONS", "").lower() == "true" or not sys.stdout.isatty():
+            print('{"status":"assisted_signup_requires_private_interactive_local_terminal"}')
+            return 2
+        if (args.advance_birthday_once or not all((
+                args.probe_birthday_year,
+                args.select_local_year_1999,
+                args.select_local_month_day,
+                args.probe_native_full_date_select,
+            ))):
+            print('{"status":"assisted_signup_requires_verified_native_full_date_and_no_auto_next"}')
+            return 2
+        if not 1 <= args.registration_timeout <= 3600:
+            print('{"status":"registration_timeout_out_of_range"}')
+            return 2
+        print("[LOCAL ONLY] Prepare one HOME 4.1.0 setup in this persistent emulator.")
+        print("[LOCAL ONLY] No account deletion, reset, scripted Terms acceptance or repeated signup.")
     observer = ARM64RealmStageMonitor(
         args.server, args.network_script, args.arm64_script,
         select_year_1999=args.select_local_year_1999,
@@ -461,6 +544,27 @@ def main() -> int:
             args.probe_native_year_select or args.probe_native_full_date_select),
         probe_native_full_date_select=args.probe_native_full_date_select,
         advance_birthday_once=args.advance_birthday_once)
+    if args.assisted_single_signup:
+        if not confirmed_local_date_for_assisted_signup(report):
+            print('{"status":"verified_visible_1999_04_05_not_met_no_signup_continued"}')
+            return 3
+        print("[LOCAL ONLY] Birthdate 1999 / 4 / 5 is verified in native UI and original fields.")
+        print("[LOCAL ONLY] Reattaching the read-only ARM64 first-basic observer.")
+        print("[LOCAL ONLY] Do not press NEXT until arm64_auth_observer_ready appears.")
+        print("[LOCAL ONLY] Then use the ORIGINAL HOME app screens yourself:")
+        print("  1. Tap age-form NEXT once; verify/confirm the birthdate if asked.")
+        print("  2. Read the live Terms of Use and Privacy Notice; agree only if you choose.")
+        print("  3. If offered Nintendo Account linkage, choose the official unlinked route.")
+        print("  4. Choose the first valid avatar and Charmander (species #0004).")
+        print("  5. Complete only one guest setup; do not clear app storage or create again.")
+        print("[LOCAL ONLY] The server basic.utid and six-digit candidate are printed ONLY here.")
+        print("[LOCAL ONLY] Six-digit candidate is NOT yet proven to equal the starter OT ID.")
+        import home41_arm64_auth_timeline as auth
+        return auth.run(
+            args.apk, args.arm64_script, serial=None,
+            timeout=args.registration_timeout, output=None,
+            show_local_values=True, realm="emulated", remote_frida=True
+        )
     obs = report.get("stage_monitor", {})
     arm = obs.get("arm64_emulated_realm", {})
     snapshot = arm.get("snapshot", {})
