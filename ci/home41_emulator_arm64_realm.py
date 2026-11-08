@@ -53,6 +53,9 @@ _ALLOWED_AGENT_EVENTS = frozenset({
     "terms_confirm_dialog_open_entered",
     "terms_confirm_dialog_ok_clicked",
     "optional_hook_attach_failed",
+    "firstboot_controller_start_entered",
+    "firstboot_contents_first_entered",
+    "firstboot_confirmation_terms_entered",
     "year_native_item_select_armed",
     "year_native_item_select_returned",
     "year_native_item_select_failed",
@@ -187,6 +190,19 @@ def sanitize_birth_ui(raw: object) -> dict:
     }
 
 
+def sanitize_firstboot_ui(raw: object) -> dict:
+    """Read-only original FirstBoot phase, never managed pointers or text."""
+    source = raw if isinstance(raw, dict) else {}
+    index = source.get("original_phase_enum_index")
+    return {
+        "original_controller_seen": source.get("original_controller_seen") is True,
+        "original_phase_enum_index": (
+            index if type(index) is int and 0 <= index <= 128 else None
+        ),
+        "original_phase_mapping_verified": False,
+    }
+
+
 def sanitized_arm64_snapshot(raw: object) -> dict:
     if not isinstance(raw, dict):
         return {"status": "invalid_snapshot"}
@@ -209,6 +225,7 @@ def sanitized_arm64_snapshot(raw: object) -> dict:
             raw.get("serialized_lng_cntry_seen") is True,
         "counts": cleaned_counts,
         "birthdate_ui": sanitize_birth_ui(raw.get("birthdate_ui")),
+        "firstboot_ui": sanitize_firstboot_ui(raw.get("firstboot_ui")),
         "utid_raw_or_candidate_logged": False,
         "backend_endpoint_identified": False,
         "registered_account": False,
