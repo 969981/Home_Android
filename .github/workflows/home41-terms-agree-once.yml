@@ -1,0 +1,118 @@
+name: HOME 4.1.0 user-authorized official Terms and Privacy confirmation once
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/home41-terms-agree-once.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: home41-terms-agree-once-only
+  cancel-in-progress: false
+
+jobs:
+  one-terms-agreement:
+    # This workflow executes only for the single explicit one-shot
+    # authorization commit. Later ordinary master pushes cannot replay it.
+    if: contains(github.event.head_commit.message, '[home41-accept-terms-once]')
+    name: Original HOME two checkboxes and one Terms Next; no signup
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run safety tests and check original signed APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q pillow 'frida==17.26.1'
+          python -m py_compile ci/home41_terms_both_and_next.py ci/home41_terms_checkbox_ab.py ci/home41_terms_probe.py ci/home41_terms_visual_capture.py
+          python -m unittest discover -s ci -p 'test_home41_terms_checkbox_ab.py' -v
+          python -m unittest discover -s ci -p 'test_home41_terms_both_and_next.py' -v
+          python -m unittest discover -s ci -p 'test_home41_terms_visual_capture.py' -v
+          python -m unittest discover -s ci -p 'test_home41_post_age_terms_fingerprint.py' -v
+          node --check ci/home41_arm64_auth_timeline.js
+          APK="$(find ROMS/4.1.0 -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          test "$(sha256sum "$APK" | cut -d' ' -f1)" = '8dee598028cd70441f645c8fff96b093b76778d625cdf07c60109eced50ffac1'
+          echo "HOME41_APK=$APK" >> "$GITHUB_ENV"
+          mkdir -p ci-frida-results ci-terms-consent
+
+      - name: Download matching Frida server
+        shell: bash
+        run: |
+          set -euo pipefail
+          FRIDA_VERSION="$(python -c 'import frida; print(frida.__version__)')"
+          test "$FRIDA_VERSION" = "17.26.1"
+          curl -fLsS --retry 3 --connect-timeout 15 --max-time 150 \
+            "https://github.com/frida/frida/releases/download/$FRIDA_VERSION/frida-server-$FRIDA_VERSION-android-x86_64.xz" \
+            -o /tmp/home41_frida_server.xz
+          xz -dc /tmp/home41_frida_server.xz > /tmp/home41_frida_server
+          chmod 700 /tmp/home41_frida_server
+          echo "HOME41_FRIDA_SERVER=/tmp/home41_frida_server" >> "$GITHUB_ENV"
+
+      - name: Enable KVM
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -e /dev/kvm
+
+      - name: Native Phase 3 and two visually selected boxes, single official Terms Next
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          ram-size: 4096M
+          heap-size: 512M
+          disable-animations: true
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: |
+            set -e
+            python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --select-local-year-1999 --select-local-month-day --probe-native-full-date-select --advance-birthday-once
+            python ci/home41_post_age_terms_fingerprint.py --report ci-frida-results/home41_emulator_report.json --output ci-frida-results/home41_post_age_terms_fingerprint.json
+            python ci/home41_terms_both_and_next.py --authorize-original-terms-once --report ci-frida-results/home41_emulator_report.json --fingerprint ci-frida-results/home41_post_age_terms_fingerprint.json --output-dir ci-terms-consent
+
+      - name: Upload ONLY masked pre/post images and categorical result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: home41-both-terms-checkboxes-and-next-once
+          path: |
+            ci-terms-consent/before_masked.png
+            ci-terms-consent/both_checked_masked.png
+            ci-terms-consent/terms_once_status.json
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Record evidence boundary
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          path=Path("ci-terms-consent/terms_once_status.json")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a",encoding="utf-8") as out:
+              out.write("\n## Original HOME one-time Terms and Privacy UI confirmation\n\n")
+              if path.is_file():
+                  result=json.loads(path.read_text(encoding="utf8"))
+                  for key in ("status","first_checkbox_checked_verified",
+                              "privacy_checkbox_checked_verified",
+                              "terms_next_tapped","post_terms_page_changed",
+                              "account_registration_clicked_by_script",
+                              "nintendo_account_linking_clicked_by_script","utid_saved"):
+                      out.write(f"- {key}: {result.get(key)}\n")
+              else:
+                  out.write("- No valid evidence; preflight or setup failed.\n")
+              out.write("\nSingle user-authorized original Terms Next, then stop. Never clicks account registration or Nintendo Account linking.\n")
+          PY
