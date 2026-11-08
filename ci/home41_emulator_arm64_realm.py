@@ -18,6 +18,7 @@ import json
 import os
 import sys
 import time
+import subprocess
 from pathlib import Path
 
 import home41_emulator_diagnostics as diag
@@ -527,6 +528,140 @@ def confirmed_local_date_for_assisted_signup(report: object) -> bool:
     return True
 
 
+
+def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
+                               observer: ARM64RealmStageMonitor) -> dict:
+    """Repeat the user-authorized Terms UI once while the native phase agent stays attached."""
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    report_path = out / "home41_emulator_report.json"
+    fingerprint_path = out / "home41_post_age_terms_fingerprint.json"
+    terms_dir = out / "home41_terms_phase3"
+    result = {
+        "status": "phase_probe_preflight_rejected",
+        "account_registration_attempted": False,
+        "nintendo_account_linking_attempted": False,
+        "utid_saved": False,
+        "http_body_saved": False,
+        "raw_screen_saved": False,
+    }
+
+    def finish_observer() -> None:
+        if observer.arm64_session:
+            try:
+                observer.arm64_session.detach()
+            except Exception:
+                result["observer_detach_status"] = "failed"
+        observer.keep_arm64_attached = False
+        observer.keep_forward_open = False
+        if observer.device:
+            try:
+                diag.adb("forward", "--remove", "tcp:27042", timeout=15)
+            except Exception:
+                result["port_forward_cleanup_status"] = "failed"
+
+    try:
+        if not confirmed_local_date_for_assisted_signup(report):
+            result["status"] = "verified_1999_04_05_age_flow_not_met"
+            return result
+        if not report_path.is_file():
+            result["status"] = "age_report_missing"
+            return result
+        if observer.arm64_agent is None or observer.arm64_session is None:
+            result["status"] = "native_arm64_observer_not_retained"
+            return result
+
+        # Before any Terms interaction, independently re-read the live phase
+        # while the ARM64 observer is still attached to the same process.
+        pre_snapshot = sanitized_arm64_snapshot(
+            observer.arm64_agent.exports_sync.snapshot())
+        pre_ui = pre_snapshot.get("firstboot_ui", {})
+        pre_counts = pre_snapshot.get("counts", {})
+        if not (
+            pre_snapshot.get("native_arm64") is True
+            and pre_snapshot.get("hooks_ready") is True
+            and pre_ui.get("original_controller_seen") is True
+            and pre_ui.get("original_phase_enum_index") == 3
+            and pre_ui.get("original_phase_name") == "TERM_OF_SERVICE"
+            and pre_ui.get("original_phase_mapping_verified") is True
+            and type(pre_counts.get("firstboot_confirmation_terms_entered")) is int
+            and pre_counts["firstboot_confirmation_terms_entered"] > 0
+        ):
+            result["status"] = "live_phase3_terms_preflight_not_verified"
+            result["pre_terms_phase"] = pre_ui
+            return result
+
+        focus_result = diag.adb("shell", "dumpsys", "window", timeout=12)
+        focus_text = focus_result.stdout if focus_result and focus_result.returncode == 0 else ""
+        from home41_post_age_terms_fingerprint import fingerprint as build_fingerprint
+        from home41_terms_visual_capture import eligible_for_terms_capture
+        fp = build_fingerprint(report, focus_text, "")
+        if not eligible_for_terms_capture(report, fp):
+            result["status"] = "native_terms_fingerprint_gate_rejected"
+            result["pre_terms_phase"] = pre_ui
+            return result
+        fingerprint_path.write_text(
+            json.dumps(fp, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+        # This is the previously user-authorized original Terms+Privacy UI
+        # flow, replayed only on a fresh disposable AVD so the observer can
+        # remain attached through the one official Next transition.
+        terms_dir.mkdir(parents=True, exist_ok=True)
+        command = [
+            sys.executable,
+            str(Path(__file__).with_name("home41_terms_both_and_next.py")),
+            "--authorize-original-terms-once",
+            "--report", str(report_path),
+            "--fingerprint", str(fingerprint_path),
+            "--output-dir", str(terms_dir),
+        ]
+        try:
+            completed = subprocess.run(
+                command, capture_output=True, text=True, timeout=240, check=False)
+            result["terms_helper_exit_code"] = (
+                completed.returncode if type(completed.returncode) is int else None)
+        except subprocess.TimeoutExpired:
+            result["status"] = "terms_helper_timeout"
+            return result
+
+        terms_status_path = terms_dir / "terms_once_status.json"
+        if terms_status_path.is_file():
+            terms_status = json.loads(terms_status_path.read_text(encoding="utf-8"))
+        else:
+            terms_status = {}
+        result["terms_ui"] = {
+            "status": terms_status.get("status"),
+            "first_checkbox_checked_verified":
+                terms_status.get("first_checkbox_checked_verified") is True,
+            "privacy_checkbox_checked_verified":
+                terms_status.get("privacy_checkbox_checked_verified") is True,
+            "terms_next_tapped": terms_status.get("terms_next_tapped") is True,
+            "post_terms_page_changed":
+                terms_status.get("post_terms_page_changed") is True,
+        }
+
+        # Read only enum/counter fields from the SAME ARM64 agent that saw
+        # Phase 3 before the click. Never persist screenshots or auth data.
+        time.sleep(2)
+        post_snapshot = sanitized_arm64_snapshot(
+            observer.arm64_agent.exports_sync.snapshot())
+        from home41_post_terms_phase import classify_post_terms_phase
+        phase = classify_post_terms_phase(post_snapshot, terms_status)
+        result["native_phase"] = phase
+        result["status"] = phase["status"]
+        result["pre_terms_phase"] = {
+            "current_phase_index": pre_ui.get("original_phase_enum_index"),
+            "current_phase_name": pre_ui.get("original_phase_name"),
+        }
+        result["observer_stayed_attached_through_terms"] = True
+        return result
+    except Exception as exc:
+        result["status"] = "post_terms_phase_probe_exception"
+        result["error_type"] = type(exc).__name__
+        return result
+    finally:
+        finish_observer()
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apk", type=Path, required=True)
@@ -607,6 +742,12 @@ def main() -> int:
         # User-authorized assisted signup always advances the already
         # verified official age page once. This does NOT click a ToS button.
         advance_birthday_once=(args.advance_birthday_once or args.assisted_single_signup))
+    phase_probe_result = None
+    if args.probe_terms_next_phase_once:
+        phase_probe_result = run_terms_next_phase_probe(args, report, observer)
+        (Path(args.output) / "home41_post_terms_phase_report.json").write_text(
+            json.dumps(phase_probe_result, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8")
     if args.assisted_single_signup:
         if not confirmed_local_date_for_assisted_signup(report):
             print('{"status":"verified_visible_1999_04_05_not_met_no_signup_continued"}')
@@ -669,13 +810,24 @@ def main() -> int:
         "birthdate_ui": snapshot.get("birthdate_ui"),
         "first_basic_utid_observed": snapshot.get("first_basic_seen"),
         "account_registration": "not_attempted",
+        "post_terms_phase_probe": phase_probe_result,
     }, sort_keys=True))
     # Only success if the emulated ARM64 agent actually installed IL2CPP hooks.
-    return (0 if report.get("process_at_end") is True
-            and arm.get("status") == "emulated_realm_attached"
-            and snapshot.get("native_arm64") is True
-            and snapshot.get("hooks_ready") is True
-            else 3)
+    base_ok = (report.get("process_at_end") is True
+                and arm.get("status") == "emulated_realm_attached"
+                and snapshot.get("native_arm64") is True
+                and snapshot.get("hooks_ready") is True)
+    if args.probe_terms_next_phase_once:
+        phase = (phase_probe_result or {}).get("native_phase", {})
+        probe_ok = (
+            (phase_probe_result or {}).get("terms_ui", {}).get("terms_next_tapped") is True
+            and (phase_probe_result or {}).get("terms_ui", {}).get("post_terms_page_changed") is True
+            and type(phase.get("current_phase_index")) is int
+            and phase.get("native_arm64") is True
+            and phase.get("hooks_ready") is True
+        )
+        return 0 if base_ok and probe_ok else 3
+    return 0 if base_ok else 3
 
 
 if __name__ == "__main__":
