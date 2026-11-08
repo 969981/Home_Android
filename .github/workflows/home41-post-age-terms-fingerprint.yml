@@ -7,6 +7,8 @@ on:
       - '.github/workflows/home41-post-age-terms-fingerprint.yml'
       - 'ci/home41_post_age_terms_fingerprint.py'
       - 'ci/test_home41_post_age_terms_fingerprint.py'
+      - 'ci/home41_terms_visual_capture.py'
+      - 'ci/test_home41_terms_visual_capture.py'
       - 'ci/home41_emulator_diagnostics.py'
       - 'ci/home41_emulator_arm64_realm.py'
       - 'ci/home41_terms_probe.py'
@@ -39,7 +41,8 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install -q pillow 'frida==17.26.1'
-          python -m py_compile ci/home41_terms_probe.py ci/home41_post_age_terms_fingerprint.py
+          python -m py_compile ci/home41_terms_probe.py ci/home41_post_age_terms_fingerprint.py ci/home41_terms_visual_capture.py
+          python -m unittest discover -s ci -p 'test_home41_terms_visual_capture.py' -v
           node --check ci/home41_arm64_auth_timeline.js
           python -m unittest discover -s ci -p 'test_home41_terms_probe.py' -v
           python -m unittest discover -s ci -p 'test_home41_post_age_terms_fingerprint.py' -v
@@ -88,6 +91,7 @@ jobs:
             set -e
             python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --select-local-year-1999 --select-local-month-day --probe-native-full-date-select --advance-birthday-once
             python ci/home41_post_age_terms_fingerprint.py --report ci-frida-results/home41_emulator_report.json --output ci-frida-results/home41_post_age_terms_fingerprint.json
+            python ci/home41_terms_visual_capture.py --report ci-frida-results/home41_emulator_report.json --fingerprint ci-frida-results/home41_post_age_terms_fingerprint.json --output ci-frida-results/home41_terms_ui_masked.png --status ci-frida-results/home41_terms_capture_status.json
 
       - name: Display safe UI fingerprint, never raw screen/text
         if: always()
@@ -119,7 +123,11 @@ jobs:
                             'account_registration_attempted','raw_text_or_xml_saved',
                             'screenshot_saved','basic_utid_saved'):
                       out.write(f'- {k}: {obj.get(k)}\n')
-              out.write('\nNo consent, account creation, token capture or screenshots in this workflow.\n')
+              mask=Path('ci-frida-results/home41_terms_capture_status.json')
+              if mask.is_file():
+                  m=json.loads(mask.read_text(encoding='utf-8'))
+                  out.write('- Masked original Phase=3 terms screenshot saved: '+str(m.get('masked_screenshot_saved'))+'\n')
+              out.write('\nNo consent, account creation, token capture or unredacted screenshots in this workflow.\n')
           PY
 
       - name: Upload only redacted categorical JSON
@@ -129,4 +137,15 @@ jobs:
           name: home41-post-age-terms-fingerprint
           path: ci-frida-results/home41_post_age_terms_fingerprint.json
           retention-days: 3
+          if-no-files-found: warn
+
+      - name: Upload masked image of original verified Phase 3 Terms page
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: home41-terms-phase3-masked-screen
+          path: |
+            ci-frida-results/home41_terms_ui_masked.png
+            ci-frida-results/home41_terms_capture_status.json
+          retention-days: 1
           if-no-files-found: warn
