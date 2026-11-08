@@ -46,6 +46,10 @@ def fingerprint(age_report: dict, foreground_text: str, xml: str) -> dict:
         "native_terms_dialog_open_event_seen": False,
         "native_terms_dialog_ok_event_seen": False,
         "native_terms_page_visible_verified": False,
+        "native_firstboot_controller_seen": False,
+        "native_firstboot_phase_index": None,
+        "native_firstboot_phase_mapping_verified": False,
+        "native_firstboot_confirmation_terms_entered": False,
     }
     if not preflight:
         return result
@@ -57,7 +61,16 @@ def fingerprint(age_report: dict, foreground_text: str, xml: str) -> dict:
     counts = native.get("counts") if isinstance(native, dict) else None
     if (isinstance(counts, dict) and native.get("native_arm64") is True
             and native.get("hooks_ready") is True):
+        state = native.get("firstboot_ui")
+        if isinstance(state, dict):
+            result["native_firstboot_controller_seen"] = (
+                state.get("original_controller_seen") is True)
+            value = state.get("original_phase_enum_index")
+            result["native_firstboot_phase_index"] = (
+                value if type(value) is int and 0 <= value <= 128 else None)
         targets = {
+            "native_firstboot_confirmation_terms_entered":
+                "firstboot_confirmation_terms_entered",
             "native_terms_setup_event_seen":
                 "firstboot_terms_confirmation_setup_entered",
             "native_clause_creation_event_seen":
