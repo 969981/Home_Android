@@ -531,12 +531,18 @@ def run(apk: Path, out: Path, settle: int = 25,
             # Real Actions #42357267641 showed the Pokémon splash at 18s and
             # 23s but a language page at the final 50s snapshot.
             # Bound retries; never tap an unknown page or network error.
-            for attempt in range(2, 10):
+            # Cold-started GitHub-hosted Android 15 AVDs sometimes remain
+            # on the Unity splash beyond 90 seconds. Continue a bounded
+            # read-only wait; never tap unknown UI or reset app data.
+            for attempt in range(2, 21):
                 time.sleep(10)
                 retry = screenshot(out, "01b_language_retry.png")
                 report["language_poll_attempts"] = attempt
                 report["language_clicked"] = click_if_known(retry, "language")
                 if report["language_clicked"]:
+                    break
+                if not process_alive():
+                    report["language_retry_stopped_reason"] = "home_process_not_running"
                     break
         if report["language_clicked"]:
             if observer is not None:
