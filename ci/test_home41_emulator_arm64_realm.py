@@ -317,6 +317,9 @@ class AssistedSingleAccountGuardTests(unittest.TestCase):
         return {
             "process_at_end": True,
             "birthday_submitted": False,
+            "birthday_native_preflight_passed": True,
+            "birthday_next_tapped": True,
+            "post_next_screen_changed": True,
             "registration_status": "not_attempted",
             "terms_accepted": False,
             "account_delete_attempted": False,
@@ -359,6 +362,9 @@ class AssistedSingleAccountGuardTests(unittest.TestCase):
         for k, bad in (
             ("process_at_end", False),
             ("birthday_submitted", True),
+            ("birthday_native_preflight_passed", False),
+            ("birthday_next_tapped", False),
+            ("post_next_screen_changed", False),
             ("registration_status", "success"),
             ("terms_accepted", True),
             ("account_delete_attempted", True),
@@ -375,13 +381,12 @@ class AssistedSingleAccountGuardTests(unittest.TestCase):
                 value = self.valid_report()
                 value["local_month_day_probe"][key] = False
                 self.assertFalse(mod.confirmed_local_date_for_assisted_signup(value))
-        for key in tuple(report["stage_monitor"]["arm64_emulated_realm"]
-                         ["snapshot"]["birthdate_ui"]):
-            with self.subTest(key=key):
-                value = self.valid_report()
-                value["stage_monitor"]["arm64_emulated_realm"][
-                    "snapshot"]["birthdate_ui"][key] = False
-                self.assertFalse(mod.confirmed_local_date_for_assisted_signup(value))
+        # The UI controller may be unloaded once the original age NEXT is
+        # clicked. We rely on native preflight at the tap, not a stale pointer.
+        value = self.valid_report()
+        value["stage_monitor"]["arm64_emulated_realm"][
+            "snapshot"]["birthdate_ui"] = {}
+        self.assertTrue(mod.confirmed_local_date_for_assisted_signup(value))
 
     def test_missing_or_broken_frida_never_enters_signup(self):
         self.assertFalse(mod.confirmed_local_date_for_assisted_signup(None))
