@@ -11,6 +11,8 @@ on:
       - 'ci/home41_emulator_arm64_realm.py'
       - 'ci/home41_terms_probe.py'
       - 'ci/test_home41_terms_probe.py'
+      - 'ci/home41_arm64_auth_timeline.js'
+      - 'ci/home41_arm64_auth_timeline.py'
   workflow_dispatch:
 
 permissions:
@@ -36,6 +38,7 @@ jobs:
           set -euo pipefail
           python -m pip install -q pillow 'frida==17.26.1'
           python -m py_compile ci/home41_terms_probe.py ci/home41_post_age_terms_fingerprint.py
+          node --check ci/home41_arm64_auth_timeline.js
           python -m unittest discover -s ci -p 'test_home41_terms_probe.py' -v
           python -m unittest discover -s ci -p 'test_home41_post_age_terms_fingerprint.py' -v
           python -m unittest discover -s ci -p 'test_home41_emulator_arm64_realm.py' -v
@@ -100,7 +103,13 @@ jobs:
                   obj=json.loads(path.read_text(encoding='utf-8'))
                   for k in ('status','age_next_native_verified','home_foreground',
                             'terms_marker','privacy_marker','unique_terms_next_button',
-                            'unique_final_agree_button','terms_click_attempted',
+                            'unique_final_agree_button','native_terms_setup_event_seen',
+                            'native_clause_creation_event_seen',
+                            'native_checkbox_change_event_seen',
+                            'native_terms_dialog_open_event_seen',
+                            'native_terms_dialog_ok_event_seen',
+                            'native_terms_page_visible_verified',
+                            'terms_click_attempted',
                             'account_registration_attempted','raw_text_or_xml_saved',
                             'screenshot_saved','basic_utid_saved'):
                       out.write(f'- {k}: {obj.get(k)}\n')
