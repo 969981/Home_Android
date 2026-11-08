@@ -7,6 +7,10 @@ on:
       - '.github/workflows/home41-post-age-terms-fingerprint.yml'
       - 'ci/home41_post_age_terms_fingerprint.py'
       - 'ci/test_home41_post_age_terms_fingerprint.py'
+      - 'ci/home41_emulator_diagnostics.py'
+      - 'ci/home41_emulator_arm64_realm.py'
+      - 'ci/home41_terms_probe.py'
+      - 'ci/test_home41_terms_probe.py'
   workflow_dispatch:
 
 permissions:
