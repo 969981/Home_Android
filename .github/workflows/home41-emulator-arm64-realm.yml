@@ -12,6 +12,8 @@ on:
       - 'ci/test_home41_emulator_arm64_realm.py'
       - 'ci/home41_arm64_auth_timeline.js'
       - 'ci/home41_arm64_auth_timeline.py'
+      - 'ci/home41_terms_probe.py'
+      - 'ci/test_home41_terms_probe.py'
       - 'ci/home41_emulator_diagnostics.py'
       - 'ci/home41_emulator_stage_frida.py'
       - 'ci/home41_emulator_network_meta.js'
@@ -44,6 +46,7 @@ jobs:
           python -m unittest discover -s ci -p 'test_home41_emulator_diagnostics.py' -v
           python -m unittest discover -s ci -p 'test_home41_emulator_stage_frida.py' -v
           python -m unittest discover -s ci -p 'test_home41_emulator_arm64_realm.py' -v
+          python -m unittest discover -s ci -p 'test_home41_terms_probe.py' -v
           node --check ci/home41_emulator_network_meta.js
           node --check ci/home41_arm64_auth_timeline.js
           APK="$(find ROMS/4.1.0 -maxdepth 1 -type f -name '*.apk' -print -quit)"
