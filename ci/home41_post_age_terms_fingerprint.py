@@ -48,6 +48,7 @@ def fingerprint(age_report: dict, foreground_text: str, xml: str) -> dict:
         "native_terms_page_visible_verified": False,
         "native_firstboot_controller_seen": False,
         "native_firstboot_phase_index": None,
+        "native_firstboot_phase_name": None,
         "native_firstboot_phase_mapping_verified": False,
         "native_firstboot_confirmation_terms_entered": False,
     }
@@ -68,6 +69,11 @@ def fingerprint(age_report: dict, foreground_text: str, xml: str) -> dict:
             value = state.get("original_phase_enum_index")
             result["native_firstboot_phase_index"] = (
                 value if type(value) is int and 0 <= value <= 128 else None)
+            from home41_emulator_arm64_realm import FIRSTBOOT_PHASE_NAMES
+            if (type(value) is int and 0 <= value < len(FIRSTBOOT_PHASE_NAMES)
+                    and state.get("original_phase_mapping_verified") is True):
+                result["native_firstboot_phase_name"] = FIRSTBOOT_PHASE_NAMES[value]
+                result["native_firstboot_phase_mapping_verified"] = True
         targets = {
             "native_firstboot_confirmation_terms_entered":
                 "firstboot_confirmation_terms_entered",
