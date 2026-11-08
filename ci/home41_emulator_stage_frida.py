@@ -68,6 +68,7 @@ class StageMonitor:
         self.stages_marked = []
         self.agent_status = "no_agent_message"
         self.error_type = None
+        self.keep_forward_open = False
 
     def _setup_server(self) -> bool:
         if not self.server.is_file() or not self.script_path.is_file():
@@ -197,7 +198,7 @@ class StageMonitor:
                 self.session.detach()
             except Exception:
                 summary["detach_status"] = "failed"
-        if self.device:
+        if self.device and not self.keep_forward_open:
             try:
                 diag.adb("forward", "--remove", "tcp:27042", timeout=15)
             except Exception:
