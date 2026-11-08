@@ -54,6 +54,12 @@ EVENT_NAMES = frozenset({
     "firstboot_birthdata_day_change_entered",
     "firstboot_year_scroll_open_entered",
     "firstboot_year_item_selection_entered",
+    "firstboot_clause_agree_part_entered",
+    "firstboot_terms_confirmation_setup_entered",
+    "firstboot_agreement_checkbox_changed",
+    "terms_confirm_dialog_open_entered",
+    "terms_confirm_dialog_ok_clicked",
+    "optional_hook_attach_failed",
     "year_native_item_select_armed",
     "year_native_item_select_returned",
     "year_native_item_select_failed",
@@ -78,7 +84,9 @@ OBSERVER_NAMES = frozenset({
     "birthview_setdata", "birthview_year_change",
     "birthview_month_change", "birthview_day_change",
     "token_serialize", "token_callback", "login_serialize",
-    "login_callback", "common_response", "set_basic"
+    "login_callback", "common_response", "set_basic",
+    "firstboot_clause", "firstboot_terms_setup",
+    "firstboot_checkbox", "terms_dialog_open", "terms_dialog_ok"
 })
 TIMELINE_FIELDS = frozenset({
     "event", "elapsed_ms", "index", "observer", "reason",
