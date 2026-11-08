@@ -82,9 +82,14 @@ def classify_accessibility(xml: str, stage: str) -> dict:
     if packages and HOME_PACKAGE not in packages:
         result["reason"] = "other_app_overlay_or_package"
         return result
+    # A notification, Android overlay or accessibility service may add nodes
+    # even while HOME remains the focused Activity. Only HOME-owned nodes
+    # can establish the consent page identity or supply a tappable action.
     labels = [
         normalize(n.attrib.get("text", "") + " " +
-                  n.attrib.get("content-desc", "")) for n in nodes
+                  n.attrib.get("content-desc", ""))
+        if n.attrib.get("package", HOME_PACKAGE) == HOME_PACKAGE else ""
+        for n in nodes
     ]
     result["terms_marker"] = any(any(t in label for t in TERMS)
                                  for label in labels)
@@ -96,7 +101,8 @@ def classify_accessibility(xml: str, stage: str) -> dict:
     targets = NEXT if stage == "terms_next" else AGREE
     points = []
     for node, label in zip(nodes, labels):
-        if (label not in targets or node.attrib.get("clickable") != "true"
+        if (node.attrib.get("package", HOME_PACKAGE) != HOME_PACKAGE
+                or label not in targets or node.attrib.get("clickable") != "true"
                 or node.attrib.get("enabled", "true") != "true"
                 or node.attrib.get("visible-to-user", "true") != "true"):
             continue
