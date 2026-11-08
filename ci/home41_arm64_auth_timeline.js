@@ -42,7 +42,14 @@ const RVA = Object.freeze({
   customDropdownShow: 0x1F14920,
   customDropdownScrollOpen: 0x1F14C90,
   customDropdownOnSelectItem: 0x1F15084,
-  customDropdownSetValue: 0x1F14014
+  customDropdownSetValue: 0x1F14014,
+  // Static originals in 4.1.0 IL2CppDumper ScriptMethod; NOT yet runtime
+  // validated (separate candidate events never authorize consent clicks).
+  firstBootAddClauseAgree: 0x1DE09D8,
+  firstBootSetupConfirmationTerms: 0x1DE2400,
+  firstBootCheckboxValueChanged: 0x1C7FD54,
+  termsConfirmDialogOpen: 0x1E22360,
+  termsConfirmDialogOkClick: 0x1E22738
 });
 const begun = Date.now();
 const counts = {
@@ -62,7 +69,12 @@ const counts = {
   firstboot_birthdata_month_change_entered: 0,
   firstboot_birthdata_day_change_entered: 0,
   firstboot_year_scroll_open_entered: 0,
-  firstboot_year_item_selection_entered: 0
+  firstboot_year_item_selection_entered: 0,
+  firstboot_clause_agree_part_entered: 0,
+  firstboot_terms_confirmation_setup_entered: 0,
+  firstboot_agreement_checkbox_changed: 0,
+  terms_confirm_dialog_open_entered: 0,
+  terms_confirm_dialog_ok_clicked: 0
 };
 const LIMIT_PER_EVENT = 16;
 let hooksReady = false;
@@ -494,6 +506,26 @@ function install(lib) {
   function onEntered(name) {
     return {onEnter() {milestone(name);}};
   }
+  // Static HOME FirstBoot terms UI discovery: these are informational
+  // observers only, not consent controls. Optional so a changed/unsupported
+  // UI candidate never breaks the original auth or birthday hooks.
+  function optionalUiObserver(name, rva, event) {
+    try {
+      Interceptor.attach(ptr(rva), onEntered(event));
+    } catch (_) {
+      emit('optional_hook_attach_failed', {observer: name});
+    }
+  }
+  optionalUiObserver('firstboot_clause', RVA.firstBootAddClauseAgree,
+                     'firstboot_clause_agree_part_entered');
+  optionalUiObserver('firstboot_terms_setup', RVA.firstBootSetupConfirmationTerms,
+                     'firstboot_terms_confirmation_setup_entered');
+  optionalUiObserver('firstboot_checkbox', RVA.firstBootCheckboxValueChanged,
+                     'firstboot_agreement_checkbox_changed');
+  optionalUiObserver('terms_dialog_open', RVA.termsConfirmDialogOpen,
+                     'terms_confirm_dialog_open_entered');
+  optionalUiObserver('terms_dialog_ok', RVA.termsConfirmDialogOkClick,
+                     'terms_confirm_dialog_ok_clicked');
 
   hook('register_serialize', RVA.registerSerialize,
        onEntered('registration_request_serializer_entered'));
