@@ -60,6 +60,9 @@ EVENT_NAMES = frozenset({
     "terms_confirm_dialog_open_entered",
     "terms_confirm_dialog_ok_clicked",
     "optional_hook_attach_failed",
+    "firstboot_controller_start_entered",
+    "firstboot_contents_first_entered",
+    "firstboot_confirmation_terms_entered",
     "year_native_item_select_armed",
     "year_native_item_select_returned",
     "year_native_item_select_failed",
@@ -86,7 +89,8 @@ OBSERVER_NAMES = frozenset({
     "token_serialize", "token_callback", "login_serialize",
     "login_callback", "common_response", "set_basic",
     "firstboot_clause", "firstboot_terms_setup",
-    "firstboot_checkbox", "terms_dialog_open", "terms_dialog_ok"
+    "firstboot_checkbox", "terms_dialog_open", "terms_dialog_ok",
+    "firstboot_phase"
 })
 TIMELINE_FIELDS = frozenset({
     "event", "elapsed_ms", "index", "observer", "reason",
