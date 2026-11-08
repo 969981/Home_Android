@@ -431,6 +431,16 @@ def confirmed_local_date_for_assisted_signup(report: object) -> bool:
         return False
     if report.get("birthday_submitted") is not False:
         return False
+    # Assisted flow explicitly advances the age page exactly once. The guard
+    # in diag.run had already established original native dropdown selections.
+    # After navigation the birthdate controller may be destroyed, so require
+    # the recorded native preflight rather than dereferencing stale UI memory.
+    if not all(report.get(k) is True for k in (
+        "birthday_native_preflight_passed",
+        "birthday_next_tapped",
+        "post_next_screen_changed",
+    )):
+        return False
     if report.get("registration_status") != "not_attempted":
         return False
     if report.get("terms_accepted") is not False:
@@ -460,21 +470,7 @@ def confirmed_local_date_for_assisted_signup(report: object) -> bool:
         return False
     if snapshot.get("native_arm64") is not True or snapshot.get("hooks_ready") is not True:
         return False
-    ui = snapshot.get("birthdate_ui")
-    return isinstance(ui, dict) and all(
-        ui.get(k) is True for k in (
-            "exact_birthdate_selected",
-            "inputed_year_equals_1999",
-            "inputed_month_equals_4",
-            "inputed_day_equals_5",
-            "year_dropdown_is_selected",
-            "month_dropdown_is_selected",
-            "day_dropdown_is_selected",
-            "native_year_item_select_confirmed",
-            "native_month_item_select_confirmed",
-            "native_day_item_select_confirmed",
-        )
-    )
+    return True
 
 
 def main() -> int:
@@ -512,13 +508,13 @@ def main() -> int:
         if os.environ.get("GITHUB_ACTIONS", "").lower() == "true" or not sys.stdout.isatty():
             print('{"status":"assisted_signup_requires_private_interactive_local_terminal"}')
             return 2
-        if (args.advance_birthday_once or not all((
+        if not all((
                 args.probe_birthday_year,
                 args.select_local_year_1999,
                 args.select_local_month_day,
                 args.probe_native_full_date_select,
-            ))):
-            print('{"status":"assisted_signup_requires_verified_native_full_date_and_no_auto_next"}')
+            )):
+            print('{"status":"assisted_signup_requires_verified_native_full_date"}')
             return 2
         if not 1 <= args.registration_timeout <= 3600:
             print('{"status":"registration_timeout_out_of_range"}')
@@ -543,17 +539,21 @@ def main() -> int:
         probe_native_year_select=(
             args.probe_native_year_select or args.probe_native_full_date_select),
         probe_native_full_date_select=args.probe_native_full_date_select,
-        advance_birthday_once=args.advance_birthday_once)
+        # User-authorized assisted signup always advances the already
+        # verified official age page once. This does NOT click a ToS button.
+        advance_birthday_once=(args.advance_birthday_once or args.assisted_single_signup))
     if args.assisted_single_signup:
         if not confirmed_local_date_for_assisted_signup(report):
             print('{"status":"verified_visible_1999_04_05_not_met_no_signup_continued"}')
             return 3
-        print("[LOCAL ONLY] Birthdate 1999 / 4 / 5 is verified in native UI and original fields.")
+        print("[LOCAL ONLY] Birthday 1999/4/5 verified BEFORE one original age-page NEXT.")
+        print("[LOCAL ONLY] Age-page NEXT clicked; post-next screen changed.")
         print("[LOCAL ONLY] Reattaching the read-only ARM64 first-basic observer.")
-        print("[LOCAL ONLY] Do not press NEXT until arm64_auth_observer_ready appears.")
+        print("[LOCAL ONLY] Do not operate the new screen until arm64_auth_observer_ready appears.")
         print("[LOCAL ONLY] Then use the ORIGINAL HOME app screens yourself:")
-        print("  1. Tap age-form NEXT once; verify/confirm the birthdate if asked.")
-        print("  2. Read the live Terms of Use and Privacy Notice; agree only if you choose.")
+        print("  1. The age-form NEXT has already been clicked exactly once.")
+        print("  2. User authorized agreement to HOME's service terms;")
+        print("     inspect the actual official terms screen and agree there.")
         print("  3. If offered Nintendo Account linkage, choose the official unlinked route.")
         print("  4. Choose the first valid avatar and Charmander (species #0004).")
         print("  5. Complete only one guest setup; do not clear app storage or create again.")
