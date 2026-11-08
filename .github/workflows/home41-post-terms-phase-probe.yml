@@ -91,21 +91,11 @@ jobs:
           ram-size: 4096M
           heap-size: 512M
           disable-animations: true
-          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none -no-metrics
+          pre-emulator-launch-script: adb start-server
           script: |
             set -e
-            python ci/home41_emulator_arm64_realm.py \
-              --apk "$HOME41_APK" \
-              --output ci-frida-results \
-              --server "$HOME41_FRIDA_SERVER" \
-              --settle-seconds 10 \
-              --probe-birthday-year \
-              --select-local-year-1999 \
-              --select-local-month-day \
-              --probe-native-full-date-select \
-              --advance-birthday-once \
-              --probe-terms-next-phase-once \
-              --authorize-terms-next-phase-once
+            python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --select-local-year-1999 --select-local-month-day --probe-native-full-date-select --advance-birthday-once --probe-terms-next-phase-once --authorize-terms-next-phase-once
 
       - name: Upload only masked Terms UI and categorical phase proof
         if: always()
