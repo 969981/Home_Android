@@ -49,7 +49,11 @@ const RVA = Object.freeze({
   firstBootSetupConfirmationTerms: 0x1DE2400,
   firstBootCheckboxValueChanged: 0x1C7FD54,
   termsConfirmDialogOpen: 0x1E22360,
-  termsConfirmDialogOkClick: 0x1E22738
+  termsConfirmDialogOkClick: 0x1E22738,
+  firstBootBodyStart: 0x1DDFAF0,
+  firstBootBodyDestroy: 0x1DDFD6C,
+  firstBootContentsFirst: 0x1DE1D84,
+  firstBootConfirmTerms: 0x1DE2E4C
 });
 const begun = Date.now();
 const counts = {
@@ -74,7 +78,10 @@ const counts = {
   firstboot_terms_confirmation_setup_entered: 0,
   firstboot_agreement_checkbox_changed: 0,
   terms_confirm_dialog_open_entered: 0,
-  terms_confirm_dialog_ok_clicked: 0
+  terms_confirm_dialog_ok_clicked: 0,
+  firstboot_controller_start_entered: 0,
+  firstboot_contents_first_entered: 0,
+  firstboot_confirmation_terms_entered: 0
 };
 const LIMIT_PER_EVENT = 16;
 let hooksReady = false;
@@ -85,6 +92,17 @@ let packedLNG = null;
 let packedCNTRY = null;
 let fromCommonBasicCaller = false;
 let nativeModuleReady = false;
+// Original FirstBootBodyController._currentPhase at +0xEC, from 4.1.0 dump.cs.
+// Its numerical value is an unverified enum until independent mapping.
+let firstBootBodyPtr = null;
+function readCurrentFirstBootPhase() {
+  if (firstBootBodyPtr === null) return null;
+  try {
+    const phase = firstBootBodyPtr.add(0xEC).readS32();
+    return Number.isInteger(phase) && phase >= 0 && phase <= 128
+      ? phase : null;
+  } catch (_) {return null;}
+}
 // FirstBootViewInputBirthData instance, strictly private to this local Agent.
 // Original managed offsets verified in IL2CppDumper dump.cs:
 // yearDropdown +0x28, yearOptionDataList +0x40, inputedYear +0x58,
@@ -305,6 +323,11 @@ rpc.exports = {
       first_basic_seen: basicObserved,
       observed_common_basic_caller: fromCommonBasicCaller,
       serialized_lng_cntry_seen: packedLNG !== null && packedCNTRY !== null,
+      firstboot_ui: {
+        original_controller_seen: firstBootBodyPtr !== null,
+        original_phase_enum_index: readCurrentFirstBootPhase(),
+        original_phase_mapping_verified: false,
+      },
       birthdate_ui: {
         ...readBirthdateUIState(),
         year_setter_opted_in: optInYearSetArmed,
@@ -526,6 +549,37 @@ function install(lib) {
                      'terms_confirm_dialog_open_entered');
   optionalUiObserver('terms_dialog_ok', RVA.termsConfirmDialogOkClick,
                      'terms_confirm_dialog_ok_clicked');
+  // Read-only original FirstBoot phase observation, no workflow changes.
+  // Start and original setup callbacks capture the managed instance only
+  // inside this private Frida agent. Never publish the instance pointer.
+  try {
+    Interceptor.attach(ptr(RVA.firstBootBodyStart), {
+      onEnter(args) {
+        firstBootBodyPtr = args[0];
+        milestone('firstboot_controller_start_entered');
+      }
+    });
+    Interceptor.attach(ptr(RVA.firstBootContentsFirst), {
+      onEnter(args) {
+        firstBootBodyPtr = args[0];
+        milestone('firstboot_contents_first_entered');
+      }
+    });
+    Interceptor.attach(ptr(RVA.firstBootConfirmTerms), {
+      onEnter(args) {
+        firstBootBodyPtr = args[0];
+        milestone('firstboot_confirmation_terms_entered');
+      }
+    });
+    Interceptor.attach(ptr(RVA.firstBootBodyDestroy), {
+      onEnter(args) {
+        if (firstBootBodyPtr !== null && firstBootBodyPtr.equals(args[0]))
+          firstBootBodyPtr = null;
+      }
+    });
+  } catch (_) {
+    emit('optional_hook_attach_failed', {observer: 'firstboot_phase'});
+  }
 
   hook('register_serialize', RVA.registerSerialize,
        onEntered('registration_request_serializer_entered'));
