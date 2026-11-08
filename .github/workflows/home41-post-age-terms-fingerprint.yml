@@ -111,6 +111,10 @@ jobs:
                             'native_terms_dialog_open_event_seen',
                             'native_terms_dialog_ok_event_seen',
                             'native_terms_page_visible_verified',
+                            'native_firstboot_controller_seen',
+                            'native_firstboot_phase_index',
+                            'native_firstboot_phase_mapping_verified',
+                            'native_firstboot_confirmation_terms_entered',
                             'terms_click_attempted',
                             'account_registration_attempted','raw_text_or_xml_saved',
                             'screenshot_saved','basic_utid_saved'):
