@@ -20,7 +20,9 @@ permissions:
 
 concurrency:
   group: home41-post-age-terms-fingerprint
-  cancel-in-progress: false
+  # A newer probe invalidates older in-flight runs; only the latest
+  # source revision should consume disposable AVD time.
+  cancel-in-progress: true
 
 jobs:
   probe:
