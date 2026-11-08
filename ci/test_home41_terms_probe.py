@@ -68,6 +68,23 @@ class TermsProbeTests(unittest.TestCase):
         self.assertFalse(x["eligible"])
         self.assertEqual(x["reason"], "other_app_overlay_or_package")
 
+    def test_mixed_foreground_with_foreign_overlay_button_refused(self):
+        xml = f'''<hierarchy>
+          <node package="{HOME_PACKAGE}" text="Terms of Use"/>
+          <node package="{HOME_PACKAGE}" text="Privacy Notice"/>
+          <node package="com.example.overlay" text="Next" clickable="true"
+                bounds="[100,700][400,800]"/></hierarchy>'''
+        self.assertFalse(classify_accessibility(xml, "terms_next")["eligible"])
+
+    def test_overlay_cannot_provide_terms_or_privacy_identity(self):
+        xml = f'''<hierarchy>
+          <node package="{HOME_PACKAGE}" text="Next" clickable="true"
+                bounds="[100,700][400,800]"/>
+          <node package="com.example.overlay" text="Terms of Use"/>
+          <node package="com.example.overlay" text="Privacy Notice"/>
+        </hierarchy>'''
+        self.assertFalse(classify_accessibility(xml, "terms_next")["eligible"])
+
     def test_non_hierarchy_xml_refused(self):
         self.assertFalse(classify_accessibility("<other/>", "terms_next")["eligible"])
         self.assertFalse(classify_accessibility("garbled", "terms_next")["eligible"])
