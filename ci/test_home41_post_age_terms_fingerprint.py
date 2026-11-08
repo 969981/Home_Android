@@ -64,6 +64,32 @@ class PostAgeFingerprintTests(unittest.TestCase):
         self.assertNotIn("SHOULD_NOT_LEAK", repr(result))
         self.assertEqual(result["status"], "post_age_screen_not_accessible_as_terms")
 
+    def test_native_firstboot_phase_is_read_only_and_bounded(self):
+        age = self.report()
+        age["stage_monitor"] = {"arm64_emulated_realm": {
+            "snapshot": {
+                "native_arm64": True, "hooks_ready": True,
+                "counts": {"firstboot_confirmation_terms_entered": 1},
+                "firstboot_ui": {
+                    "original_controller_seen": True,
+                    "original_phase_enum_index": 12,
+                    "raw_ptr": "PRIVATE",
+                }
+            }
+        }}
+        result = fingerprint(age, self.focus(), "<hierarchy/>")
+        self.assertTrue(result["native_firstboot_controller_seen"])
+        self.assertEqual(result["native_firstboot_phase_index"], 12)
+        self.assertTrue(result["native_firstboot_confirmation_terms_entered"])
+        self.assertFalse(result["native_firstboot_phase_mapping_verified"])
+        self.assertNotIn("PRIVATE", repr(result))
+        self.assertFalse(result["terms_click_attempted"])
+
+        age["stage_monitor"]["arm64_emulated_realm"]["snapshot"]["firstboot_ui"][
+            "original_phase_enum_index"] = True
+        self.assertIsNone(fingerprint(age, self.focus(), "<hierarchy/>")[
+            "native_firstboot_phase_index"])
+
     def test_untrusted_boolean_native_count_is_not_positive_hit(self):
         age = self.report()
         age["stage_monitor"] = {"arm64_emulated_realm": {
