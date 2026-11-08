@@ -307,5 +307,109 @@ class ARM64RealmContractTests(unittest.TestCase):
                 self.assertFalse(clean["native_arm64"] and clean["hooks_ready"])
 
 
+
+
+class AssistedSingleAccountGuardTests(unittest.TestCase):
+    """No Android, network, signup, consent or account mutation in these tests."""
+
+    @staticmethod
+    def valid_report():
+        return {
+            "process_at_end": True,
+            "birthday_submitted": False,
+            "registration_status": "not_attempted",
+            "terms_accepted": False,
+            "account_delete_attempted": False,
+            "local_month_day_probe": {
+                "year_caption_roi_changed": True,
+                "month_caption_roi_changed": True,
+                "day_caption_roi_changed": True,
+                "native_year_item_select_armed": True,
+                "native_month_item_select_armed": True,
+                "native_day_item_select_armed": True,
+            },
+            "stage_monitor": {
+                "arm64_emulated_realm": {
+                    "status": "emulated_realm_attached",
+                    "snapshot": {
+                        "native_arm64": True,
+                        "hooks_ready": True,
+                        "birthdate_ui": {
+                            "exact_birthdate_selected": True,
+                            "inputed_year_equals_1999": True,
+                            "inputed_month_equals_4": True,
+                            "inputed_day_equals_5": True,
+                            "year_dropdown_is_selected": True,
+                            "month_dropdown_is_selected": True,
+                            "day_dropdown_is_selected": True,
+                            "native_year_item_select_confirmed": True,
+                            "native_month_item_select_confirmed": True,
+                            "native_day_item_select_confirmed": True,
+                        },
+                    },
+                },
+            },
+        }
+
+    def test_realistic_verified_date_can_proceed_to_manual_only_stage(self):
+        self.assertTrue(mod.confirmed_local_date_for_assisted_signup(
+            self.valid_report()))
+
+    def test_unverified_or_auto_submitted_date_rejected(self):
+        for k, bad in (
+            ("process_at_end", False),
+            ("birthday_submitted", True),
+            ("registration_status", "success"),
+            ("terms_accepted", True),
+            ("account_delete_attempted", True),
+        ):
+            with self.subTest(key=k):
+                report = self.valid_report()
+                report[k] = bad
+                self.assertFalse(mod.confirmed_local_date_for_assisted_signup(report))
+
+    def test_any_unverified_dropdown_or_visual_change_rejected(self):
+        report = self.valid_report()
+        for key in tuple(report["local_month_day_probe"]):
+            with self.subTest(key=key):
+                value = self.valid_report()
+                value["local_month_day_probe"][key] = False
+                self.assertFalse(mod.confirmed_local_date_for_assisted_signup(value))
+        for key in tuple(report["stage_monitor"]["arm64_emulated_realm"]
+                         ["snapshot"]["birthdate_ui"]):
+            with self.subTest(key=key):
+                value = self.valid_report()
+                value["stage_monitor"]["arm64_emulated_realm"][
+                    "snapshot"]["birthdate_ui"][key] = False
+                self.assertFalse(mod.confirmed_local_date_for_assisted_signup(value))
+
+    def test_missing_or_broken_frida_never_enters_signup(self):
+        self.assertFalse(mod.confirmed_local_date_for_assisted_signup(None))
+        self.assertFalse(mod.confirmed_local_date_for_assisted_signup({}))
+        for key, val in (("status", "frida_unavailable"),
+                         ("snapshot", {}),
+                         ("native_arm64", False),
+                         ("hooks_ready", False)):
+            with self.subTest(key=key):
+                value = self.valid_report()
+                realm = value["stage_monitor"]["arm64_emulated_realm"]
+                if key in ("status", "snapshot"):
+                    realm[key] = val
+                else:
+                    realm["snapshot"][key] = val
+                self.assertFalse(mod.confirmed_local_date_for_assisted_signup(value))
+
+    def test_ci_cannot_arm_interactive_account_flow(self):
+        argv = ["script", "--apk", "x.apk", "--output", "out",
+                "--server", "frida-server",
+                "--assisted-single-signup",
+                "--probe-birthday-year", "--select-local-year-1999",
+                "--select-local-month-day", "--probe-native-full-date-select"]
+        with patch.object(sys, "argv", argv), patch.dict(
+                "os.environ", {"GITHUB_ACTIONS": "true"}), patch.object(
+                    sys.stdout, "isatty", return_value=True):
+            self.assertEqual(mod.main(), 2)
+
+
 if __name__=="__main__":
     unittest.main()
