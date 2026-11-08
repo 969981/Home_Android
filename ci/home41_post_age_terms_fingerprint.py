@@ -40,9 +40,38 @@ def fingerprint(age_report: dict, foreground_text: str, xml: str) -> dict:
         "terms_click_attempted": False,
         "account_registration_attempted": False,
         "basic_utid_saved": False,
+        "native_terms_setup_event_seen": False,
+        "native_clause_creation_event_seen": False,
+        "native_checkbox_change_event_seen": False,
+        "native_terms_dialog_open_event_seen": False,
+        "native_terms_dialog_ok_event_seen": False,
+        "native_terms_page_visible_verified": False,
     }
     if not preflight:
         return result
+    # This is a source-backed native-call hint, NOT proof that the legal UI
+    # has been rendered. Candidates can be called during initialization.
+    snap = age_report.get("stage_monitor")
+    realm = snap.get("arm64_emulated_realm") if isinstance(snap, dict) else None
+    native = realm.get("snapshot") if isinstance(realm, dict) else None
+    counts = native.get("counts") if isinstance(native, dict) else None
+    if (isinstance(counts, dict) and native.get("native_arm64") is True
+            and native.get("hooks_ready") is True):
+        targets = {
+            "native_terms_setup_event_seen":
+                "firstboot_terms_confirmation_setup_entered",
+            "native_clause_creation_event_seen":
+                "firstboot_clause_agree_part_entered",
+            "native_checkbox_change_event_seen":
+                "firstboot_agreement_checkbox_changed",
+            "native_terms_dialog_open_event_seen":
+                "terms_confirm_dialog_open_entered",
+            "native_terms_dialog_ok_event_seen":
+                "terms_confirm_dialog_ok_clicked",
+        }
+        for output, name in targets.items():
+            value = counts.get(name)
+            result[output] = type(value) is int and 0 < value <= 100000
     result["home_foreground"] = terms.home_is_foreground(foreground_text)
     if not result["home_foreground"]:
         result["status"] = "home_not_foreground"
