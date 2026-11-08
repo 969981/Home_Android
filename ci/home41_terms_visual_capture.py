@@ -29,7 +29,10 @@ def eligible_for_terms_capture(report: object, fingerprint: object) -> bool:
         fingerprint.get("age_next_native_verified") is True,
         fingerprint.get("home_foreground") is True,
         fingerprint.get("native_firstboot_controller_seen") is True,
+        type(fingerprint.get("native_firstboot_phase_index")) is int,
         fingerprint.get("native_firstboot_phase_index") == 3,
+        fingerprint.get("native_firstboot_phase_name") == "TERM_OF_SERVICE",
+        fingerprint.get("native_firstboot_phase_mapping_verified") is True,
         fingerprint.get("native_firstboot_confirmation_terms_entered") is True,
         fingerprint.get("terms_click_attempted") is False,
         fingerprint.get("account_registration_attempted") is False,
@@ -48,6 +51,8 @@ def eligible_for_terms_capture(report: object, fingerprint: object) -> bool:
         and snapshot.get("hooks_ready") is True
         and type(original.get("original_phase_enum_index")) is int
         and original["original_phase_enum_index"] == 3
+        and original.get("original_phase_name") == "TERM_OF_SERVICE"
+        and original.get("original_phase_mapping_verified") is True
         and original.get("original_controller_seen") is True
         and type(counts.get("firstboot_confirmation_terms_entered")) is int
         and counts["firstboot_confirmation_terms_entered"] > 0
