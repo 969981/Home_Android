@@ -584,10 +584,10 @@ function install(lib) {
     Interceptor.attach(ptr(RVA.firstBootConfirmAdvertisementSDK), {
       onEnter(args) {
         firstBootBodyPtr = args[0];
-        firstBootAdvertisementSDKHookAttached = true;
         milestone('firstboot_confirmation_advertisement_sdk_entered');
       }
     });
+    firstBootAdvertisementSDKHookAttached = true;
     Interceptor.attach(ptr(RVA.firstBootGoToPhase), {
       onEnter(args) {
         firstBootBodyPtr = args[0];
@@ -598,9 +598,9 @@ function install(lib) {
             milestone('firstboot_go_to_phase_entered', {phase_index: requested});
           }
         } catch (_) {}
-        firstBootGoToPhaseHookAttached = true;
       }
     });
+    firstBootGoToPhaseHookAttached = true;
     Interceptor.attach(ptr(RVA.firstBootBodyDestroy), {
       onEnter(args) {
         if (firstBootBodyPtr !== null && firstBootBodyPtr.equals(args[0]))
