@@ -5,6 +5,8 @@ on:
     branches: [master]
     paths:
       - '.github/workflows/home41-post-terms-phase-probe.yml'
+      - 'ci/home41_phase4_masked_capture.py'
+      - 'ci/test_home41_phase4_masked_capture.py'
 
 permissions:
   contents: read
@@ -39,7 +41,8 @@ jobs:
             ci/home41_terms_probe.py \
             ci/home41_terms_visual_capture.py \
             ci/home41_terms_checkbox_ab.py \
-            ci/home41_terms_both_and_next.py
+            ci/home41_terms_both_and_next.py \
+            ci/home41_phase4_masked_capture.py
           node --check ci/home41_arm64_auth_timeline.js
           python -m unittest discover -s ci -p 'test_home41_post_terms_phase.py' -v
           python -m unittest discover -s ci -p 'test_home41_phase_transition_hooks.py' -v
@@ -47,6 +50,7 @@ jobs:
           python -m unittest discover -s ci -p 'test_home41_terms_both_and_next.py' -v
           python -m unittest discover -s ci -p 'test_home41_terms_visual_capture.py' -v
           python -m unittest discover -s ci -p 'test_home41_post_age_terms_fingerprint.py' -v
+          python -m unittest discover -s ci -p 'test_home41_phase4_masked_capture.py' -v
 
       - name: Verify exact original signed HOME 4.1.0 APK
         shell: bash
@@ -96,6 +100,7 @@ jobs:
           script: |
             set -e
             python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --select-local-year-1999 --select-local-month-day --probe-native-full-date-select --advance-birthday-once --probe-terms-next-phase-once --authorize-terms-next-phase-once
+            python ci/home41_phase4_masked_capture.py --report ci-frida-results/home41_emulator_report.json --output ci-frida-results/home41_phase4_masked.png --status ci-frida-results/home41_phase4_capture_status.json
 
       - name: Upload only masked Terms UI and categorical phase proof
         if: always()
@@ -108,6 +113,8 @@ jobs:
             ci-frida-results/home41_terms_phase3/before_masked.png
             ci-frida-results/home41_terms_phase3/both_checked_masked.png
             ci-frida-results/home41_terms_phase3/terms_once_status.json
+            ci-frida-results/home41_phase4_masked.png
+            ci-frida-results/home41_phase4_capture_status.json
           retention-days: 1
           if-no-files-found: warn
 
@@ -134,5 +141,9 @@ jobs:
                   out.write("- New page observed: "+str(terms.get("post_terms_page_changed"))+"\n")
               else:
                   out.write("- No phase report; preflight/setup did not complete.\n")
-              out.write("\nNo registration, Nintendo Account linking, UTID, token, HTTP body or post-Next screenshot is captured.\n")
+              capture=Path('ci-frida-results/home41_phase4_capture_status.json')
+              if capture.is_file():
+                  obj=json.loads(capture.read_text(encoding='utf-8'))
+                  out.write('- Phase 4 masked visual saved: '+str(obj.get('masked_screenshot_saved'))+'\\n')
+              out.write("\\nNo registration, Nintendo Account linking, UTID, token, HTTP body or unmasked screenshot is captured.\\n")
           PY
