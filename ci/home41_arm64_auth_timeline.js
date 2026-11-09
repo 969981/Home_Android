@@ -66,6 +66,29 @@ const RVA = Object.freeze({
   guestSecondDirectCalleeUnclassified: 0x1DEB3C0,
   postGuestCandidate1098: 0x1DE1098,
   postGuestCandidate16F4: 0x1DE16F4,
+  // The two old "postGuestCandidate" labels are legacy only:
+  // 0x1DE1098 = FirstBootBodyController._AddWarningPart,
+  // 0x1DE16F4 = FirstBootBodyController._AddPadder.
+  // They are UI construction helpers, NOT registration callbacks.
+  // Original IL2CPP class declarations verified in PokeHome_Resources
+  // static Actions #42460662202.
+  firstBootDecisionGestAccount: 0x1DE5508,
+  firstBootDenialGestAccount: 0x1DE5698,
+  firstBootSelectTrainerIcon: 0x1DE48F8,
+  firstBootPlayPrologue: 0x1DE45E8,
+  firstBootPlayPrologue2: 0x1DE4CF4,
+  firstBootAddIconSelecter: 0x1DE11D0,
+  firstBootAddProloguePanel: 0x1DE1894,
+  firstBootSetUpContentsForMTAccountSetting: 0x1DE2490,
+  firstBootIconSelectorSetData: 0x1C800C4,
+  firstBootIconSelectorCreateImages: 0x1C800E0,
+  firstBootIconSelectorOnTapIcon: 0x1C803AC,
+  firstBootProloguePanelSetPokemonView: 0x1C7D658,
+  firstBootProloguePanelCastPokemonSelect: 0x1C7DE6C,
+  firstBootProloguePokemonPanelOpen: 0x1C7DC8C,
+  firstBootProloguePokemonPanelOnTapPokemon: 0x1C7F0F4,
+  firstBootProloguePokemonPanelSelectedIcon: 0x1C7F230,
+  firstBootProloguePanelOnTapYes: 0x1C7E008,
   authManagerRegisterUser: 0x1D2F8DC
 });
 const begun = Date.now();
@@ -103,7 +126,24 @@ const counts = {
   guest_second_direct_callee_unclassified_entered: 0,
   post_guest_candidate_1098_entered: 0,
   post_guest_candidate_16f4_entered: 0,
-  auth_manager_register_user_entered: 0
+  auth_manager_register_user_entered: 0,
+  firstboot_decision_gest_account_entered: 0,
+  firstboot_denial_gest_account_entered: 0,
+  firstboot_select_trainer_icon_entered: 0,
+  firstboot_play_prologue_entered: 0,
+  firstboot_play_prologue2_entered: 0,
+  firstboot_add_icon_selector_entered: 0,
+  firstboot_add_prologue_panel_entered: 0,
+  firstboot_setup_mt_account_setting_entered: 0,
+  firstboot_icon_selector_set_data_entered: 0,
+  firstboot_icon_selector_create_images_entered: 0,
+  firstboot_icon_selector_on_tap_icon_entered: 0,
+  firstboot_prologue_panel_set_pokemon_view_entered: 0,
+  firstboot_prologue_panel_cast_pokemon_select_entered: 0,
+  firstboot_prologue_pokemon_panel_open_entered: 0,
+  firstboot_prologue_pokemon_panel_on_tap_pokemon_entered: 0,
+  firstboot_prologue_pokemon_panel_selected_icon_entered: 0,
+  firstboot_prologue_panel_on_tap_yes_entered: 0
 };
 const LIMIT_PER_EVENT = 16;
 let hooksReady = false;
@@ -612,6 +652,47 @@ function install(lib) {
     optionalUiObserver('auth_manager_register_user',
                        RVA.authManagerRegisterUser,
                        'auth_manager_register_user_entered');
+  // Exact original IL2CPP UI method names and entry RVAs. Pure read-only
+  // counters, with the original client's own clicks/decisions. No code calls
+  // these native functions, no fields/args/pointers or account IDs exposed.
+  for (const item of [
+    ['decision_gest', RVA.firstBootDecisionGestAccount,
+      'firstboot_decision_gest_account_entered'],
+    ['denial_gest', RVA.firstBootDenialGestAccount,
+      'firstboot_denial_gest_account_entered'],
+    ['select_trainer_icon', RVA.firstBootSelectTrainerIcon,
+      'firstboot_select_trainer_icon_entered'],
+    ['play_prologue', RVA.firstBootPlayPrologue,
+      'firstboot_play_prologue_entered'],
+    ['play_prologue2', RVA.firstBootPlayPrologue2,
+      'firstboot_play_prologue2_entered'],
+    ['add_icon_selector', RVA.firstBootAddIconSelecter,
+      'firstboot_add_icon_selector_entered'],
+    ['add_prologue_panel', RVA.firstBootAddProloguePanel,
+      'firstboot_add_prologue_panel_entered'],
+    ['setup_mt_account', RVA.firstBootSetUpContentsForMTAccountSetting,
+      'firstboot_setup_mt_account_setting_entered'],
+    ['icon_selector_set_data', RVA.firstBootIconSelectorSetData,
+      'firstboot_icon_selector_set_data_entered'],
+    ['icon_selector_create_images', RVA.firstBootIconSelectorCreateImages,
+      'firstboot_icon_selector_create_images_entered'],
+    ['icon_selector_on_tap', RVA.firstBootIconSelectorOnTapIcon,
+      'firstboot_icon_selector_on_tap_icon_entered'],
+    ['prologue_set_pokemon_view', RVA.firstBootProloguePanelSetPokemonView,
+      'firstboot_prologue_panel_set_pokemon_view_entered'],
+    ['prologue_cast_pokemon_select', RVA.firstBootProloguePanelCastPokemonSelect,
+      'firstboot_prologue_panel_cast_pokemon_select_entered'],
+    ['prologue_pokemon_panel_open', RVA.firstBootProloguePokemonPanelOpen,
+      'firstboot_prologue_pokemon_panel_open_entered'],
+    ['prologue_pokemon_tap', RVA.firstBootProloguePokemonPanelOnTapPokemon,
+      'firstboot_prologue_pokemon_panel_on_tap_pokemon_entered'],
+    ['prologue_pokemon_selected_icon', RVA.firstBootProloguePokemonPanelSelectedIcon,
+      'firstboot_prologue_pokemon_panel_selected_icon_entered'],
+    ['prologue_on_tap_yes', RVA.firstBootProloguePanelOnTapYes,
+      'firstboot_prologue_panel_on_tap_yes_entered'],
+  ]) {
+    optionalUiObserver(item[0], item[1], item[2]);
+  }
   // Read-only original FirstBoot phase observation, no workflow changes.
   // Start and original setup callbacks capture the managed instance only
   // inside this private Frida agent. Never publish the instance pointer.
