@@ -84,7 +84,8 @@ class GuestCallbackCoverageTests(unittest.TestCase):
         })
         self.assertEqual(snap["counts"], {v: 2 for v in events.values()})
         self.assertEqual(snap["guest_callback_hook_coverage"], {
-            "second_direct": True, "post_1098": False,
+            "second_direct": True, "decision_thunk": False,
+            "denial_thunk": False, "post_1098": False,
             "post_16f4": False, "register_manager": False,
         })
         dump = json.dumps(snap)
@@ -104,6 +105,11 @@ class GuestCallbackCoverageTests(unittest.TestCase):
         self.assertEqual(delta["second_direct"], 1)
         self.assertEqual(delta["register_manager"], 3)
         self.assertEqual(delta["post_1098"], 0)
+        after[e["decision_thunk"]] = 1
+        after[e["denial_thunk"]] = 0
+        v = self.ns["guest_callback_count_deltas"](after,before,hooks)
+        self.assertEqual(v["decision_thunk"],1)
+        self.assertEqual(v["denial_thunk"],0)
 
     def test_named_original_ui_counters_require_installed_hook(self):
         events=self.ns["_POST_GUEST_UI_EVENTS"]
