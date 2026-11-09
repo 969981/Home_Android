@@ -35,6 +35,8 @@ WINDOWS={
     "FirstBoot._AddPadder":(0x1DE16F4,0x130),
     "FirstBoot.GoToPhase":(0x1DE1C10,0x160),
     "FirstBoot.SetUpMTAccountSetting":(0x1DE2490,0x160),
+    "FirstBoot.SecondDecisionTailThunk":(0x1DEB490,0x18),
+    "FirstBoot.SecondDenialTailThunk":(0x1DEB578,0x18),
     "FirstBoot.DecisionGestAccount":(0x1DE5508,0x190),
     "FirstBoot.DenialGestAccount":(0x1DE5698,0xAC),
     "FirstBoot.GuestResultCallback_b84_6":(0x1DE64C0,0x14),
@@ -57,6 +59,24 @@ WINDOWS={
     "ApiRequestAuthRegisterUser.CallAfterResponse":(0x1D33294,0x180),
 }
 KNOWN={start:name for name,(start,_) in WINDOWS.items()}
+# Precise branches cross-verified against SHA-locked original Android AArch64
+# executable bytes, not inferred from method names or generated pseudocode.
+# B is a tail call: a BL-only callgraph would miss Decision → RegisterUser.
+EXPECTED_BRANCHES = (
+    (0x1DE53DC, "BL", 0x1DEB3C0),
+    (0x1DEB4A4, "B", 0x1DE5508),
+    (0x1DEB58C, "B", 0x1DE5698),
+    (0x1DE5690, "B", 0x1D2F8DC),
+    (0x1DE64D0, "B", 0x1DE1C10),
+    (0x1DE64E4, "B", 0x1DE1C10),
+    (0x1DE64F8, "B", 0x1DE1C10),
+    (0x1DE65C8, "B", 0x1DE1C10),
+)
+EXPECTED_GUEST_START_THUNK = (
+    0x528000E8, 0x7200003F, 0x528001C9, 0x1A881121, 0x17FFEDD0
+)
+EXPECTED_GUEST_DECISION_STORE = (0x1DE55F4, 0x3904E668)
+
 
 
 def a64_bl_target(pc:int, insn:int) -> int | None:
@@ -152,6 +172,54 @@ def audit_bytes(data:bytes, start:int)->dict:
             "trailing_bytes_may_be_next_method":True}
 
 
+def verify_verified_guest_branch_chain(so:bytes,segs:list[dict])->dict:
+    """Assert original branch opcodes, opcode shape and guest flag store."""
+    edges = []
+    for pc, kind, expected in EXPECTED_BRANCHES:
+        b = extract_at_rva(so,segs,pc,4)
+        insn = struct.unpack("<I",b)[0]
+        actual = (a64_bl_target(pc,insn) if kind == "BL" else
+                  a64_b_target(pc,insn))
+        if actual != expected:
+            raise ValueError(
+                f"original branch opcode mismatch at 0x{pc:X} "
+                f"({kind} -> {actual}, expected 0x{expected:X})")
+        edges.append({
+            "pc":f"0x{pc:X}", "instruction":kind,
+            "opcode":f"0x{insn:08X}", "target_rva":f"0x{actual:X}",
+            "original_bytes_verified":True,
+        })
+    start = 0x1DE64C0
+    branch_words = struct.unpack("<IIIII",
+                                 extract_at_rva(so,segs,start,20))
+    if branch_words != EXPECTED_GUEST_START_THUNK:
+        raise ValueError("guest start branch opcode window mismatch")
+    pc, expected_store = EXPECTED_GUEST_DECISION_STORE
+    actual_store = struct.unpack(
+        "<I",extract_at_rva(so,segs,pc,4))[0]
+    if actual_store != expected_store:
+        raise ValueError("_isDecisionGest original store opcode mismatch")
+    return {
+        "status":"exact_SHA_locked_original_A64_branches_verified",
+        "verified_edge_count":len(edges),
+        "edges":edges,
+        "guest_start_callback": {
+            "rva":"0x1DE64C0",
+            "argument":"isGestStart bool from W1, exact 5-instruction window",
+            "if_true":"GoToPhase(14) MT_LOGIN",
+            "if_false":"GoToPhase(7) NA_LINK_CONTINUE",
+        },
+        "guest_decision_store": {
+            "rva":f"0x{pc:X}",
+            "opcode":f"0x{actual_store:08X}",
+            "field":"FirstBootBodyController._isDecisionGest (+0x139)",
+        },
+        "actual_server_registration_confirmed":False,
+        "button_to_delegate_runtime_identity_verified":False,
+        "real_UI_ID_or_Token_logged":False,
+    }
+
+
 def main()->int:
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--apk",type=Path,required=True)
@@ -177,6 +245,8 @@ def main()->int:
         "indirect_calls_resolved":False,
         "network_or_guest_account_accessed":False,
         "windows":{},
+        "guest_positive_negative_branch_chain":
+            verify_verified_guest_branch_chain(so,segs),
     }
     for name,(start,size) in WINDOWS.items():
         data=extract_at_rva(so,segs,start,size)
