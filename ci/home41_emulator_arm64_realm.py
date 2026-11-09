@@ -736,6 +736,44 @@ def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
                     "nintendo_account_linking_attempted": False,
                     "utid_saved": False,
                 }
+                # After the actual opt-out, the UI changed but the game
+                # can remain in Phase 4. Take a masked screenshot ONLY if
+                # a second native snapshot independently confirms Phase 4,
+                # with no account creation or Nintendo linkage.
+                if (
+                    result["phase4_decline_probe"]["post_decline_screen_changed"]
+                    and result["post_phase4_native"]["current_phase_index"] == 4
+                    and result["post_phase4_native"]["last_requested_phase_index"] == 4
+                ):
+                    phase_path.write_text(
+                        json.dumps(result, ensure_ascii=False,
+                                   indent=2, sort_keys=True) + "\n",
+                        encoding="utf-8")
+                    capture_cmd = [
+                        sys.executable,
+                        str(Path(__file__).with_name(
+                            "home41_phase4_post_decline_capture.py")),
+                        "--age-report", str(report_path),
+                        "--phase-report", str(phase_path),
+                        "--output", str(phase4_dir / "post_decline_masked.png"),
+                        "--status", str(phase4_dir / "post_decline_capture_status.json"),
+                    ]
+                    capture = subprocess.run(
+                        capture_cmd, capture_output=True, text=True,
+                        timeout=50, check=False)
+                    result["post_decline_capture_exit_code"] = capture.returncode
+                    capture_status = phase4_dir / "post_decline_capture_status.json"
+                    if capture_status.is_file():
+                        c = json.loads(capture_status.read_text(encoding="utf-8"))
+                        result["post_decline_capture"] = {
+                            "status": c.get("status"),
+                            "native_phase4_gate_passed":
+                                c.get("post_decline_original_phase4_confirmed") is True,
+                            "masked_screenshot_saved":
+                                c.get("masked_screenshot_saved") is True,
+                            "screen_clicked": False,
+                            "account_registration_attempted": False,
+                        }
         return result
     except Exception as exc:
         result["status"] = "post_terms_phase_probe_exception"
