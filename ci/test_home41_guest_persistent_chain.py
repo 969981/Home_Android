@@ -98,6 +98,92 @@ class GuestChronologyFixtures(unittest.TestCase):
                          "second_confirmation_not_observed")
         self.assertEqual(guest["post_second_phase_requests"],[])
 
+    def test_original_avatar_and_starter_entries_before_register_manager(self):
+        events = [
+            ev("firstboot_confirm_gest_second_entered", 10),
+            {**ev("firstboot_go_to_phase_entered", 20), "phase_index": 15},
+            ev("firstboot_select_trainer_icon_entered", 30),
+            ev("firstboot_add_icon_selector_entered", 40),
+            ev("firstboot_icon_selector_create_images_entered", 45),
+            ev("firstboot_icon_selector_on_tap_icon_entered", 80),
+            ev("firstboot_play_prologue_entered", 90),
+            ev("firstboot_prologue_pokemon_panel_open_entered", 100),
+            ev("firstboot_prologue_pokemon_panel_on_tap_pokemon_entered", 150),
+            ev("auth_manager_register_user_entered", 180),
+        ]
+        guest = timeline.analyze_events(events, True, None)["guest_path"]
+        self.assertEqual(guest["named_ui_vs_register_manager"],
+                         "named_ui_entered_before_register_manager")
+        hints = [x["stage_hint"] for x in
+                 guest["post_second_named_ui_method_entries"]]
+        self.assertEqual(hints[0], "avatar_controller")
+        self.assertIn("avatar_user_tap", hints)
+        self.assertIn("starter_panel_open", hints)
+        self.assertIn("starter_user_tap", hints)
+        self.assertFalse(guest["named_ui_entry_confirms_actual_render"])
+        self.assertTrue(all(x["entry_only_not_render_proof"] for x in
+                            guest["post_second_named_ui_method_entries"]))
+
+    def test_manager_first_and_no_second_are_distinguished(self):
+        events = [
+            ev("firstboot_confirm_gest_second_entered", 10),
+            ev("auth_manager_register_user_entered", 20),
+            ev("firstboot_select_trainer_icon_entered", 60),
+        ]
+        self.assertEqual(
+            timeline.analyze_events(events, True, None)["guest_path"][
+                "named_ui_vs_register_manager"],
+            "register_manager_entered_before_named_ui")
+        before_only = [
+            ev("firstboot_select_trainer_icon_entered", 3),
+            ev("firstboot_confirm_gest_second_entered", 10),
+        ]
+        guest = timeline.analyze_events(before_only, True, None)["guest_path"]
+        self.assertEqual(guest["post_second_named_ui_method_entries"], [])
+        self.assertEqual(guest["named_ui_vs_register_manager"],
+                         "neither_named_ui_nor_manager_observed")
+        no_second = timeline.analyze_events([
+            ev("firstboot_select_trainer_icon_entered", 12)
+        ], True, None)["guest_path"]
+        self.assertEqual(no_second["named_ui_vs_register_manager"],
+                         "second_confirmation_not_observed")
+
+    def test_named_ui_hook_coverage_is_explicit_and_redacted(self):
+        unknown = timeline.sanitize_post_guest_ui_hook_coverage(None)
+        self.assertEqual(set(unknown),
+                         set(timeline.POST_GUEST_UI_EVENTS.values()))
+        self.assertTrue(all(v is None for v in unknown.values()))
+        clean = timeline.sanitize_post_guest_ui_hook_coverage({
+            "post_guest_ui_hook_coverage": {
+                "select_trainer_icon": True,
+                "prologue_pokemon_tap": False,
+                "play_prologue": 1,
+                "raw_utid": "12345678",
+            }
+        })
+        self.assertTrue(clean["select_trainer_icon"])
+        self.assertFalse(clean["prologue_pokemon_tap"])
+        self.assertIsNone(clean["play_prologue"])
+        self.assertNotIn("12345678", str(clean))
+
+    def test_exact_original_method_rvas_are_present(self):
+        src=(Path(__file__).with_name("home41_arm64_auth_timeline.js")
+             .read_text(encoding="utf8"))
+        for addr,name in (
+            ("0x1DE48F8", "firstBootSelectTrainerIcon"),
+            ("0x1DE45E8", "firstBootPlayPrologue"),
+            ("0x1DE4CF4", "firstBootPlayPrologue2"),
+            ("0x1DE5508", "firstBootDecisionGestAccount"),
+            ("0x1DE5698", "firstBootDenialGestAccount"),
+            ("0x1C803AC", "firstBootIconSelectorOnTapIcon"),
+            ("0x1C7F0F4", "firstBootProloguePokemonPanelOnTapPokemon"),
+            ("0x1DE1098", "postGuestCandidate1098"),
+            ("0x1DE16F4", "postGuestCandidate16F4"),
+        ):
+            self.assertIn(name + ": " + addr, src)
+        self.assertIn("FirstBootBodyController._AddWarningPart", src)
+        self.assertIn("FirstBootBodyController._AddPadder", src)
+
     def test_guest_second_without_registration_is_not_creation(self):
         result = timeline.analyze_events([
             ev("arm64_auth_observer_ready", 1),
