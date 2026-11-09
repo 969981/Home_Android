@@ -373,6 +373,21 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
     # These are time-order observations, NOT proof that a given callback
     # belongs to the same server transaction or that registration succeeded.
     pairs = {
+        "second_to_decision_thunk": chronological_pair(
+            "firstboot_confirm_gest_second_entered",
+            "guest_second_decision_thunk_entered"),
+        "decision_thunk_to_decision_controller": chronological_pair(
+            "guest_second_decision_thunk_entered",
+            "firstboot_decision_gest_account_entered"),
+        "decision_controller_to_registration_manager": chronological_pair(
+            "firstboot_decision_gest_account_entered",
+            "auth_manager_register_user_entered"),
+        "second_to_denial_thunk": chronological_pair(
+            "firstboot_confirm_gest_second_entered",
+            "guest_second_denial_thunk_entered"),
+        "denial_thunk_to_denial_controller": chronological_pair(
+            "guest_second_denial_thunk_entered",
+            "firstboot_denial_gest_account_entered"),
         "second_to_registration_manager": chronological_pair(
             "firstboot_confirm_gest_second_entered",
             "auth_manager_register_user_entered"),
@@ -514,6 +529,14 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
                 "firstboot_confirm_gest_second_entered" in order,
             "second_direct_callee_unclassified_entered":
                 "guest_second_direct_callee_unclassified_entered" in order,
+            "decision_thunk_entered":
+                "guest_second_decision_thunk_entered" in order,
+            "denial_thunk_entered":
+                "guest_second_denial_thunk_entered" in order,
+            "decision_controller_entered":
+                "firstboot_decision_gest_account_entered" in order,
+            "denial_controller_entered":
+                "firstboot_denial_gest_account_entered" in order,
             "post_guest_candidate_1098_entered":
                 "post_guest_candidate_1098_entered" in order,
             "post_guest_candidate_16f4_entered":
