@@ -103,7 +103,7 @@ const RVA = Object.freeze({
   firstBootProloguePanelOnTapYes: 0x1C7E008,
   authManagerRegisterUser: 0x1D2F8DC,
   // Original byte-confirmed tail branch at 0x1D2F9E8 leads here.
-  // 0x1D35CC8 is ApiRequestCreateToken$.ctor in the version-pinned
+  // 0x1D35CC8 is ApiRequestCreateToken constructor (.ctor) in the version-pinned
   // original IL2CppDumper ScriptMethod index. This is a Token REQUEST
   // constructor, NOT ApiRequestAuthRegisterUser serialization or a send.
   authManagerTailTarget: 0x1D2F1F8,
@@ -737,7 +737,7 @@ function install(lib) {
     optionalUiObserver('manager_tail_target_1d2f1f8',
                        RVA.authManagerTailTarget,
                        'auth_manager_tail_target_entered');
-  // The original ScriptMethod maps this entry to ApiRequestCreateToken$.ctor.
+  // The original ScriptMethod maps this entry to ApiRequestCreateToken constructor (.ctor).
   // Retain the legacy event name for older reports. Do NOT claim a native
   // caller/registration transaction just because a constructor was entered.
   try {
