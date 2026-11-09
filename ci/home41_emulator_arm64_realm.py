@@ -68,6 +68,8 @@ _ALLOWED_AGENT_EVENTS = frozenset({
     "post_guest_candidate_1098_entered",
     "post_guest_candidate_16f4_entered",
     "auth_manager_register_user_entered",
+    "auth_manager_tail_target_entered",
+    "auth_manager_tail_callee_35cc8_entered",
     "nearby_conditional_callback_blr_entered",
     "firstboot_decision_gest_account_entered",
     "firstboot_denial_gest_account_entered",
@@ -370,6 +372,13 @@ def sanitized_arm64_snapshot(raw: object) -> dict:
             else False
             for k in ("second_direct", "decision_thunk", "denial_thunk",
                       "post_1098", "post_16f4", "register_manager")
+        },
+        "registration_tail_observer_hook_coverage": {
+            k: (raw.get("registration_tail_observer_hook_coverage") or {}).get(k)
+               if isinstance(raw.get("registration_tail_observer_hook_coverage"),dict)
+               and type((raw.get("registration_tail_observer_hook_coverage")
+                         or {}).get(k)) is bool else None
+            for k in ("tail_target_1d2f1f8","downstream_1d35cc8")
         },
         "nearby_conditional_callback_blr_hook_attached": (
             raw.get("nearby_conditional_callback_blr_hook_attached")
