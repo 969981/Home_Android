@@ -32,6 +32,7 @@ EVENT_NAMES = frozenset({
     "arm64_auth_observer_ready",
     "arm64_auth_observer_partial",
     "registration_request_constructor_entered",
+    "registration_request_constructor_returned",
     "registration_request_serializer_entered",
     "registration_lng_cntry_packed_write_seen",
     "registration_request_formatter_entered",
@@ -77,6 +78,7 @@ EVENT_NAMES = frozenset({
     "auth_manager_register_user_entered",
     "auth_manager_tail_target_entered",
     "auth_manager_tail_callee_35cc8_entered",
+    "auth_manager_tail_callee_35cc8_returned",
     "nearby_conditional_callback_blr_entered",
     "firstboot_decision_gest_account_entered",
     "firstboot_denial_gest_account_entered",
@@ -212,7 +214,9 @@ def sanitize_timeline_event(message: object) -> dict | None:
             clean["same_token_ctor_instance_observed"] = True
         if source.get("same_token_ctor_from_tail_instance_observed") is True:
             clean["same_token_ctor_from_tail_instance_observed"] = True
-    if source["event"] == "auth_manager_tail_callee_35cc8_entered":
+    if source["event"] in (
+            "auth_manager_tail_callee_35cc8_entered",
+            "auth_manager_tail_callee_35cc8_returned"):
         if source.get("create_token_ctor_from_tail_callsite_observed") is True:
             clean["create_token_ctor_from_tail_callsite_observed"] = True
     if source["event"] in ("registration_request_serializer_entered",
@@ -403,6 +407,33 @@ ORIGINAL_ENTRY_IDENTITIES = {
         "ApiRequestAuthRegisterUser.SerializeRequestParameter",
 }
 
+def _completed_request_address_match(
+    window: list[dict],
+    constructor_return: str,
+    followup_events: tuple[str, ...],
+    equality_bit: str,
+    *,
+    callsite_required: bool = False,
+) -> bool:
+    """Only trust a post-completion equality report in this Guest window.
+
+    This validates event ordering, NOT unique managed identity or a backend
+    transaction. The native agent also bounds age and clears per Guest epoch.
+    """
+    seen_completion = False
+    for entry in window:
+        name = entry.get("event")
+        if name == constructor_return:
+            if (not callsite_required or
+                    entry.get("create_token_ctor_from_tail_callsite_observed")
+                    is True):
+                seen_completion = True
+        elif (seen_completion and name in followup_events and
+              entry.get(equality_bit) is True):
+            return True
+    return False
+
+
 ORDERED_REGISTER_ENTRY_EVENTS = (
     ("firstboot_confirm_gest_second_entered", "confirm_second"),
     ("guest_second_decision_thunk_entered", "positive_thunk"),
@@ -428,8 +459,15 @@ def observe_guest_register_order(
                 if e.get("event") == "firstboot_confirm_gest_second_entered"),
                None)
     offset = start if start is not None else len(events)
+    # The second attempt belongs to a different observation epoch. Never
+    # combine checkpoints across two final-guest confirmations.
+    next_second = next((i for i in range(offset + 1, len(events))
+                        if events[i].get("event") ==
+                        "firstboot_confirm_gest_second_entered"), None)
+    stop = next_second if next_second is not None else len(events)
+    window = events[offset:stop]
     first={}
-    for i, entry in enumerate(events[offset:], start=offset):
+    for i, entry in enumerate(window, start=offset):
         event=entry.get("event")
         if event in (e for e,_ in ORDERED_REGISTER_ENTRY_EVENTS) and event not in first:
             first[event] = i
@@ -458,7 +496,8 @@ def observe_guest_register_order(
               all(x["observed"] for x in stages) and
               all(x["observed_delivery_order"] is True for x in pairs))
     return {
-        "observation_scope":"first_ConfirmGestAccountSecond_and_later_only",
+        "observation_scope":"first_ConfirmGestAccountSecond_until_next_second_or_end",
+        "window_stopped_at_another_second_confirmation":next_second is not None,
         "second_confirmation_observed":start is not None,
         "stages":stages,
         "adjacent_conditional_callback_not_required":True,
@@ -466,25 +505,33 @@ def observe_guest_register_order(
         "all_seven_stages_observed_in_order":bool(complete),
         "all_required_stage_hooks_installed":all(
             x["native_hook_installed"] is True for x in stages),
-        "same_create_token_request_instance_observed":any(
-            e.get("event") in ("token_request_serializer_entered",
-                               "token_response_handler_entered")
-            and e.get("same_token_ctor_instance_observed") is True
-            for e in events[offset:]),
-        "same_auth_register_request_instance_observed":any(
-            e.get("event") in ("registration_request_serializer_entered",
-                               "registration_response_handler_entered")
-            and e.get("same_register_ctor_instance_observed") is True
-            for e in events[offset:]),
+        "same_create_token_request_instance_observed":
+            _completed_request_address_match(
+                window, "auth_manager_tail_callee_35cc8_returned",
+                ("token_request_serializer_entered",
+                 "token_response_handler_entered"),
+                "same_token_ctor_instance_observed"),
+        "same_auth_register_request_instance_observed":
+            _completed_request_address_match(
+                window, "registration_request_constructor_returned",
+                ("registration_request_serializer_entered",
+                 "registration_response_handler_entered"),
+                "same_register_ctor_instance_observed"),
         "create_token_ctor_direct_register_tail_caller_observed":any(
             e.get("event") == "auth_manager_tail_callee_35cc8_entered"
             and e.get("create_token_ctor_from_tail_callsite_observed") is True
-            for e in events[offset:]),
-        "same_token_request_from_register_tail_callsite_observed":any(
-            e.get("event") in ("token_request_serializer_entered",
-                               "token_response_handler_entered")
-            and e.get("same_token_ctor_from_tail_instance_observed") is True
-            for e in events[offset:]),
+            for e in window),
+        "create_token_ctor_direct_register_tail_caller_completed":any(
+            e.get("event") == "auth_manager_tail_callee_35cc8_returned"
+            and e.get("create_token_ctor_from_tail_callsite_observed") is True
+            for e in window),
+        "same_token_request_from_register_tail_callsite_observed":
+            _completed_request_address_match(
+                window, "auth_manager_tail_callee_35cc8_returned",
+                ("token_request_serializer_entered",
+                 "token_response_handler_entered"),
+                "same_token_ctor_from_tail_instance_observed",
+                callsite_required=True),
         "identical_native_callstack_proven":False,
         "identical_registration_request_proven":False,
         "server_registration_proven":False,
@@ -502,7 +549,9 @@ LIVE_GUEST_CHAIN_EVENTS = frozenset({
     "auth_manager_register_user_entered",
     "auth_manager_tail_target_entered",
     "auth_manager_tail_callee_35cc8_entered",
+    "auth_manager_tail_callee_35cc8_returned",
     "registration_request_constructor_entered",
+    "registration_request_constructor_returned",
     "nearby_conditional_callback_blr_entered",
     "registration_request_serializer_entered",
     "registration_response_handler_entered",
