@@ -24,6 +24,7 @@ const VERSION = '4.1.0';
 const TARGET = '888888';
 const RVA = Object.freeze({
   registerSerialize: 0x1D334A4,
+  registerConstructor: 0x1D336C8,
   registerPackedWriteComplete: 0x1D335C0,
   registerRequestFormatter: 0x205AEF0,
   registerResponseFormatter: 0x205DA3C,
@@ -116,6 +117,7 @@ const RVA = Object.freeze({
 });
 const begun = Date.now();
 const counts = {
+  registration_request_constructor_entered: 0,
   registration_request_serializer_entered: 0,
   registration_lng_cntry_packed_write_seen: 0,
   registration_request_formatter_entered: 0,
@@ -211,6 +213,8 @@ let registerTailObserverHookCoverage = {
 // Bounded private identities of CreateToken request instances. Only equality
 // bits are emitted; no pointer or ID is included in any report.
 const observedTokenCtorInstances = new Set();
+const observedRegisterCtorInstances = new Set();
+let registerRequestCtorHookAttached = false;
 let tokenRequestHookCoverage = {serialize: false, callback: false};
 // All values are set ONLY by a real Interceptor.attach success/failure.
 // These are the coverage gates for interpreting absent guest callbacks.
@@ -493,7 +497,8 @@ rpc.exports = {
         nearbyConditionalCallbackBlrHookAttached,
       registration_tail_observer_hook_coverage:
         {...registerTailObserverHookCoverage},
-      token_request_hook_coverage: {...tokenRequestHookCoverage}
+      token_request_hook_coverage: {...tokenRequestHookCoverage},
+      register_request_ctor_hook_attached: registerRequestCtorHookAttached
     };
   },
   // Explicit single local-form interaction. Never used by the ordinary
@@ -701,6 +706,7 @@ function install(lib) {
     Interceptor.attach(ptr(RVA.firstBootConfirmGestAccountSecond), {
       onEnter() {
         observedTokenCtorInstances.clear();
+        observedRegisterCtorInstances.clear();
         milestone('firstboot_confirm_gest_second_entered');
       }
     });
@@ -915,9 +921,39 @@ function install(lib) {
     emit('optional_hook_attach_failed', {observer: 'firstboot_phase'});
   }
 
+  // ApiRequestAuthRegisterUser constructor and serializer are DIFFERENT
+  // methods from ApiRequestCreateToken. Object addresses remain local.
+  // Their equality is only evidence of the same native address in this
+  // observation window, never proof of a network request or backend success.
+  function recordCtorInstance(args, instances) {
+    try {
+      if (!args[0].isNull() && instances.size < 64)
+        instances.add(args[0].toString());
+    } catch (_) {}
+  }
+  function ctorInstanceMatched(args, instances) {
+    try {
+      return !args[0].isNull() && instances.has(args[0].toString());
+    } catch (_) {
+      return false;
+    }
+  }
+  registerRequestCtorHookAttached =
+    hook('auth_register_request_ctor', RVA.registerConstructor, {
+      onEnter(args) {
+        recordCtorInstance(args, observedRegisterCtorInstances);
+        milestone('registration_request_constructor_entered');
+      }
+    });
   guestChainCriticalHookCoverage.register_serializer =
-    hook('register_serialize', RVA.registerSerialize,
-         onEntered('registration_request_serializer_entered'));
+    hook('register_serialize', RVA.registerSerialize, {
+      onEnter(args) {
+        const observed = ctorInstanceMatched(args,
+          observedRegisterCtorInstances);
+        milestone('registration_request_serializer_entered', observed ?
+          {same_register_ctor_instance_observed: true} : {});
+      }
+    });
 
   // Static store at 0x1D335BC has ALREADY executed at this instruction.
   // X20 denotes the request DTO and two S32 members start at +0x28/+0x2C.
@@ -951,16 +987,21 @@ function install(lib) {
   hook('register_response_formatter', RVA.registerResponseFormatter,
        onEntered('registration_response_formatter_entered'));
   guestChainCriticalHookCoverage.register_response =
-    hook('register_callback', RVA.registerCallback,
-         onEntered('registration_response_handler_entered'));
+    hook('register_callback', RVA.registerCallback, {
+      onEnter(args) {
+        const observed = ctorInstanceMatched(args,
+          observedRegisterCtorInstances);
+        milestone('registration_response_handler_entered', observed ?
+          {same_register_ctor_instance_observed: true} : {});
+      }
+    });
   // Match only the managed CreateToken request object's address INSIDE the
   // local observer. A matched bit proves the two entrances used the same
   // instance, not that HTTP was sent or that registration succeeded.
   function tokenRequestEntry(eventName, args) {
     let matched = false;
     try {
-      matched = !args[0].isNull() &&
-        observedTokenCtorInstances.has(args[0].toString());
+      matched = ctorInstanceMatched(args, observedTokenCtorInstances);
     } catch (_) {}
     milestone(eventName, matched ?
       {same_token_ctor_instance_observed: true} : {});
