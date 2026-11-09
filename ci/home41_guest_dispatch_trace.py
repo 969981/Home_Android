@@ -25,7 +25,7 @@ START_RVA = 0x1D2F8DC
 STOP_RVA_EXCLUSIVE = 0x1D2FA30
 BLR_PC = EXPECTED_NEARBY_CALLBACK_BLR_PC
 MANAGER_TAIL_TARGET = 0x1D2F1F8
-MANAGER_TAIL_WINDOW_BYTES = 0x140  # bounded scan; NOT a function extent
+MANAGER_TAIL_WINDOW_BYTES = 0x330  # bounded scan; NOT a function extent
 MAX_FILE = 250_000_000
 
 
@@ -147,8 +147,20 @@ def main() -> int:
     print("BLR X8:",result["dispatch_instruction"])
     print("Prior body tail exit:",result["prior_method_unconditional_tail_branch"])
     print("AtuhRegisterUser verified branch target 0x1D2F1F8 (bounded disassembly):")
-    for row in result["manager_tail_target"]["instructions"][:48]:
+    tail=result["manager_tail_target"]["instructions"]
+    for row in tail[:16]:
         print(row["rva"],row["opcode"],row["mnemonic"],row["operands"])
+    print("Tail target after initial static-setup branch at 0x1D2F2A4:")
+    for row in tail:
+        pc=int(row["rva"],16)
+        if 0x1D2F2A4 <= pc < 0x1D2F3B4:
+            print(row["rva"],row["opcode"],row["mnemonic"],row["operands"])
+    print("Remaining direct/indirect calls from bounded tail window:")
+    for row in tail:
+        pc=int(row["rva"],16)
+        if pc >= 0x1D2F3B4 and row["mnemonic"] in (
+                "b", "bl", "blr", "blraa", "blrab", "ret"):
+            print(row["rva"],row["opcode"],row["mnemonic"],row["operands"])
     print("Next prologue:",result["unclassified_adjacent_function_prologue"])
     print("Adjacent callback return:",result["unclassified_adjacent_function_return"])
     print("Potential register definitions; no runtime target claim:")
