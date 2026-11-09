@@ -26,7 +26,8 @@ class GuestChronologyFixtures(unittest.TestCase):
             ev("auth_manager_register_user_entered",13),
             ev("registration_request_serializer_entered",14),
             ev("registration_response_handler_entered",20),
-            ev("first_basic_utid_observed",30),
+            {**ev("first_basic_utid_observed",30),
+             "from_common_basic_consumer": True},
         ]
         result = timeline.diagnose_guest_chain(events,full)
         self.assertEqual(result["classification"],
@@ -37,6 +38,19 @@ class GuestChronologyFixtures(unittest.TestCase):
         self.assertFalse(result["server_registration_confirmed"])
         self.assertFalse(result["ui_six_digit_id_verified"])
         self.assertFalse(result["cold_start_account_restored_verified"])
+
+    def test_basic_event_without_verified_caller_does_not_pass(self):
+        full = {name: True for name in timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS}
+        events = [
+            ev("firstboot_confirm_gest_second_entered",10),
+            ev("registration_response_handler_entered",25),
+            ev("first_basic_utid_observed",30),
+        ]
+        result = timeline.diagnose_guest_chain(events,full)
+        self.assertEqual(result["classification"],
+                         "first_basic_event_without_verified_common_caller")
+        self.assertFalse(result["first_basic_common_caller_verified"])
+        self.assertFalse(result["ui_six_digit_id_verified"])
 
     def test_classify_guest_callback_gap_requires_hook_installation(self):
         good = {key: True for key in
