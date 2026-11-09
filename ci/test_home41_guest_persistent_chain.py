@@ -23,6 +23,8 @@ class GuestChronologyFixtures(unittest.TestCase):
             ev("firstboot_confirm_gest_first_entered", 20),
             ev("firstboot_confirm_gest_second_entered", 30),
             ev("guest_second_direct_callee_unclassified_entered", 31),
+            ev("guest_second_decision_thunk_entered", 32),
+            ev("firstboot_decision_gest_account_entered", 40),
             ev("auth_manager_register_user_entered", 100),
             ev("registration_request_serializer_entered", 110),
             ev("registration_response_handler_entered", 300),
@@ -38,8 +40,15 @@ class GuestChronologyFixtures(unittest.TestCase):
         self.assertTrue(guest["second_confirmation_entered"])
         self.assertTrue(guest["second_direct_callee_unclassified_entered"])
         self.assertTrue(guest["auth_manager_register_user_entered"])
-        self.assertTrue(all(v is True for v in
-                            guest["chronological_pairs"].values()))
+        positive = {k:v for k,v in guest["chronological_pairs"].items()
+                    if k not in ("second_to_denial_thunk",
+                                 "denial_thunk_to_denial_controller")}
+        self.assertTrue(all(v is True for v in positive.values()))
+        self.assertIsNone(guest["chronological_pairs"]["second_to_denial_thunk"])
+        self.assertIsNone(guest["chronological_pairs"]["denial_thunk_to_denial_controller"])
+        self.assertTrue(guest["decision_thunk_entered"])
+        self.assertTrue(guest["decision_controller_entered"])
+        self.assertFalse(guest["denial_thunk_entered"])
         self.assertFalse(guest["same_server_transaction_verified"])
         self.assertFalse(result["http_request_transmitted_verified"])
         self.assertFalse(result["six_digit_id_equals_starter_ot_verified"])
