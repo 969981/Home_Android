@@ -434,5 +434,66 @@ class GuestChronologyFixtures(unittest.TestCase):
         self.assertNotIn("123456", str(result))
 
 
+    def test_token_request_ctor_identity_and_protected_equality_bit(self):
+        js = Path(__file__).with_name("home41_arm64_auth_timeline.js").read_text(
+            encoding="utf-8")
+        self.assertIn("authManagerTailCallee35CC8: 0x1D35CC8", js)
+        self.assertIn("observedTokenCtorInstances.has(args[0].toString())", js)
+        self.assertIn("same_token_ctor_instance_observed: true", js)
+        self.assertIn("token_request_hook_coverage", js)
+        message = {"type": "send", "payload": {
+            "kind": timeline.KIND,
+            "version": timeline.EXPECTED_VERSION,
+            "event": "token_request_serializer_entered",
+            "elapsed_ms": 75,
+            "same_token_ctor_instance_observed": True,
+            "raw_pointer": "0xdeadbeef",
+            "token": "MUST_NOT_LOG",
+        }}
+        sanitized = timeline.sanitize_timeline_event(message)
+        self.assertEqual(sanitized, {
+            "event": "token_request_serializer_entered", "elapsed_ms": 75,
+            "same_token_ctor_instance_observed": True,
+        })
+        message["payload"]["same_token_ctor_instance_observed"] = 1
+        self.assertNotIn("same_token_ctor_instance_observed",
+                         timeline.sanitize_timeline_event(message))
+        message["payload"]["event"] = "registration_request_serializer_entered"
+        message["payload"]["same_token_ctor_instance_observed"] = True
+        self.assertNotIn("same_token_ctor_instance_observed",
+                         timeline.sanitize_timeline_event(message))
+
+    def test_token_ctor_request_identity_does_not_prove_backend_registration(self):
+        observed = [
+            ev("firstboot_confirm_gest_second_entered", 10),
+            ev("auth_manager_tail_callee_35cc8_entered", 20),
+            {**ev("token_request_serializer_entered", 25),
+             "same_token_ctor_instance_observed": True},
+        ]
+        critical = {k: True for k in timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS}
+        tail = {k: True for k in timeline.REGISTER_TAIL_HOOK_KEYS}
+        report = timeline.observe_guest_register_order(observed, critical, tail)
+        self.assertTrue(report["same_create_token_request_instance_observed"])
+        self.assertFalse(report["identical_registration_request_proven"])
+        self.assertFalse(report["server_registration_proven"])
+        self.assertFalse(report["all_seven_stages_observed_in_order"])
+        no_second = timeline.observe_guest_register_order(observed[1:],
+                                                          critical, tail)
+        self.assertFalse(no_second["same_create_token_request_instance_observed"])
+        self.assertFalse(no_second["second_confirmation_observed"])
+
+    def test_token_request_hook_installation_is_three_state(self):
+        self.assertEqual(timeline.sanitize_token_request_hook_coverage(None), {
+            "serialize": None, "callback": None,
+        })
+        clean = timeline.sanitize_token_request_hook_coverage({
+            "token_request_hook_coverage": {
+                "serialize": True, "callback": 1, "token": "SECRET"
+            }
+        })
+        self.assertEqual(clean, {"serialize": True, "callback": None})
+        self.assertNotIn("SECRET", str(clean))
+
+
 if __name__ == "__main__":
     unittest.main()
