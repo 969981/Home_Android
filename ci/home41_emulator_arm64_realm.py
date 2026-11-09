@@ -66,6 +66,30 @@ _ALLOWED_AGENT_EVENTS = frozenset({
     "post_guest_candidate_1098_entered",
     "post_guest_candidate_16f4_entered",
     "auth_manager_register_user_entered",
+    "firstboot_decision_gest_account_entered",
+    "firstboot_denial_gest_account_entered",
+    "firstboot_guest_start_callback_b84_6_entered",
+    "firstboot_start_callback_b84_9_entered",
+    "firstboot_start_callback_b84_10_entered",
+    "firstboot_start_callback_b84_13_entered",
+    "firstboot_select_trainer_icon_entered",
+    "firstboot_input_name_entered",
+    "firstboot_login_entered",
+    "firstboot_confirm_mt_detail_entered",
+    "firstboot_play_prologue_entered",
+    "firstboot_play_prologue2_entered",
+    "firstboot_add_icon_selector_entered",
+    "firstboot_add_prologue_panel_entered",
+    "firstboot_setup_mt_account_setting_entered",
+    "firstboot_icon_selector_set_data_entered",
+    "firstboot_icon_selector_create_images_entered",
+    "firstboot_icon_selector_on_tap_icon_entered",
+    "firstboot_prologue_panel_set_pokemon_view_entered",
+    "firstboot_prologue_panel_cast_pokemon_select_entered",
+    "firstboot_prologue_pokemon_panel_open_entered",
+    "firstboot_prologue_pokemon_panel_on_tap_pokemon_entered",
+    "firstboot_prologue_pokemon_panel_selected_icon_entered",
+    "firstboot_prologue_panel_on_tap_yes_entered",
     "year_native_item_select_armed",
     "year_native_item_select_returned",
     "year_native_item_select_failed",
@@ -247,6 +271,56 @@ _GUEST_FINAL_CALL_EVENTS = {
 }
 
 
+_POST_GUEST_UI_EVENTS = {
+    "decision_gest": "firstboot_decision_gest_account_entered",
+    "denial_gest": "firstboot_denial_gest_account_entered",
+    "guest_start_b84_6": "firstboot_guest_start_callback_b84_6_entered",
+    "start_b84_9": "firstboot_start_callback_b84_9_entered",
+    "start_b84_10": "firstboot_start_callback_b84_10_entered",
+    "start_b84_13": "firstboot_start_callback_b84_13_entered",
+    "select_trainer_icon": "firstboot_select_trainer_icon_entered",
+    "input_name": "firstboot_input_name_entered",
+    "firstboot_login": "firstboot_login_entered",
+    "confirm_mt_detail": "firstboot_confirm_mt_detail_entered",
+    "play_prologue": "firstboot_play_prologue_entered",
+    "play_prologue2": "firstboot_play_prologue2_entered",
+    "add_icon_selector": "firstboot_add_icon_selector_entered",
+    "add_prologue_panel": "firstboot_add_prologue_panel_entered",
+    "setup_mt_account": "firstboot_setup_mt_account_setting_entered",
+    "icon_selector_set_data": "firstboot_icon_selector_set_data_entered",
+    "icon_selector_create_images": "firstboot_icon_selector_create_images_entered",
+    "icon_selector_on_tap": "firstboot_icon_selector_on_tap_icon_entered",
+    "prologue_set_pokemon_view": "firstboot_prologue_panel_set_pokemon_view_entered",
+    "prologue_cast_pokemon_select": "firstboot_prologue_panel_cast_pokemon_select_entered",
+    "prologue_pokemon_panel_open": "firstboot_prologue_pokemon_panel_open_entered",
+    "prologue_pokemon_tap": "firstboot_prologue_pokemon_panel_on_tap_pokemon_entered",
+    "prologue_pokemon_selected_icon": "firstboot_prologue_pokemon_panel_selected_icon_entered",
+    "prologue_on_tap_yes": "firstboot_prologue_panel_on_tap_yes_entered",
+}
+
+
+def post_guest_ui_count_deltas(after: object, before: object,
+                               hook_coverage: object) -> dict:
+    """Fail-closed count deltas for original UI function entry hooks.
+
+    If a hook was not attached, or a count was missing/decreasing,
+    the resulting value is None, *not* proof of zero execution.
+    """
+    a = after if isinstance(after,dict) else {}
+    b = before if isinstance(before,dict) else {}
+    h = hook_coverage if isinstance(hook_coverage,dict) else {}
+    out = {}
+    for label,event in _POST_GUEST_UI_EVENTS.items():
+        cur, old = a.get(event), b.get(event)
+        if (h.get(label) is not True or type(cur) is not int or
+                type(old) is not int or old < 0 or cur < old or
+                cur > 100000):
+            out[label] = None
+        else:
+            out[label] = cur - old
+    return out
+
+
 def guest_callback_count_deltas(after: object, before: object,
                                 hook_coverage: object) -> dict:
     """Categorical post-click deltas; missing hooks/counters stay unknown."""
@@ -291,6 +365,13 @@ def sanitized_arm64_snapshot(raw: object) -> dict:
             else False
             for k in ("second_direct", "post_1098",
                       "post_16f4", "register_manager")
+        },
+        "post_guest_ui_hook_coverage": {
+            k: (raw.get("post_guest_ui_hook_coverage") or {}).get(k)
+               if isinstance(raw.get("post_guest_ui_hook_coverage"),dict)
+               and type((raw.get("post_guest_ui_hook_coverage") or {}).get(k))
+               is bool else None
+            for k in _POST_GUEST_UI_EVENTS
         },
         "birthdate_ui": sanitize_birth_ui(raw.get("birthdate_ui")),
         "firstboot_ui": sanitize_firstboot_ui(raw.get("firstboot_ui")),
@@ -1186,10 +1267,19 @@ def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
                                             call_deltas=guest_callback_count_deltas(
                                                 counts,pre_guest_final_counts,
                                                 hook_coverage)
+                                            ui_coverage=live.get(
+                                                "post_guest_ui_hook_coverage",{})
+                                            ui_deltas=post_guest_ui_count_deltas(
+                                                counts,pre_guest_final_counts,
+                                                ui_coverage)
                                             result["post_guest_final_native"] = {
                                                 "guest_callback_hook_coverage": hook_coverage,
                                                 "guest_callback_entries_since_final_click":
                                                     call_deltas,
+                                                "post_guest_ui_hook_coverage": ui_coverage,
+                                                "post_guest_ui_entries_since_final_click":
+                                                    ui_deltas,
+                                                "ui_method_entry_proves_rendered_screen": False,
                                                 "status": "native_guest_final_snapshot_received",
                                                 "native_arm64":
                                                     live.get("native_arm64") is True,
