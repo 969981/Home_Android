@@ -307,6 +307,22 @@ def sanitize_post_guest_ui_hook_coverage(snapshot: object) -> dict:
             for label in POST_GUEST_UI_EVENTS.values()}
 
 
+REGISTER_TAIL_HOOK_KEYS = (
+    "tail_target_1d2f1f8", "downstream_1d35cc8",
+)
+
+
+def sanitize_register_tail_hook_coverage(snapshot: object) -> dict:
+    """The true direct tail path's optional read-only hook installation."""
+    obj = (snapshot.get("registration_tail_observer_hook_coverage")
+           if isinstance(snapshot, dict) else None)
+    obj = obj if isinstance(obj,dict) else {}
+    return {
+        k: (obj[k] if type(obj.get(k)) is bool else None)
+        for k in REGISTER_TAIL_HOOK_KEYS
+    }
+
+
 GUEST_CHAIN_CRITICAL_HOOK_KEYS = (
     "confirm_second", "positive_thunk", "negative_thunk",
     "decision_controller", "denial_controller", "go_to_phase",
@@ -843,6 +859,7 @@ def run(apk: Path, script_path: Path, serial: str | None,
     guest_hook_coverage = sanitize_guest_hook_coverage(None)
     post_guest_ui_coverage = sanitize_post_guest_ui_hook_coverage(None)
     critical_guest_coverage = sanitize_guest_chain_critical_coverage(None)
+    register_tail_coverage = sanitize_register_tail_hook_coverage(None)
 
     def on_message(message, _data):
         nonlocal ready, script_error
@@ -904,10 +921,12 @@ def run(apk: Path, script_path: Path, serial: str | None,
                 guest_hook_coverage = sanitize_guest_hook_coverage(snapshot)
                 post_guest_ui_coverage = sanitize_post_guest_ui_hook_coverage(snapshot)
                 critical_guest_coverage = sanitize_guest_chain_critical_coverage(snapshot)
+                register_tail_coverage = sanitize_register_tail_hook_coverage(snapshot)
             except Exception:
                 guest_hook_coverage = sanitize_guest_hook_coverage(None)
                 post_guest_ui_coverage = sanitize_post_guest_ui_hook_coverage(None)
                 critical_guest_coverage = sanitize_guest_chain_critical_coverage(None)
+                register_tail_coverage = sanitize_register_tail_hook_coverage(None)
         # The first UTID may be received while waiting; it is never printed in
         # the public event stream. Explicit local RPC optionally displays it.
         if show_local_values and script is not None and ready:
@@ -933,6 +952,7 @@ def run(apk: Path, script_path: Path, serial: str | None,
                 post_guest_ui_coverage = sanitize_post_guest_ui_hook_coverage(snapshot)
                 critical_guest_coverage = sanitize_guest_chain_critical_coverage(
                     snapshot)
+                register_tail_coverage = sanitize_register_tail_hook_coverage(snapshot)
             except Exception:
                 pass
         if pid is not None and not resumed:
@@ -950,6 +970,8 @@ def run(apk: Path, script_path: Path, serial: str | None,
     report["guest_hook_coverage"] = guest_hook_coverage
     report["post_guest_ui_hook_coverage"] = post_guest_ui_coverage
     report["guest_chain_critical_hook_coverage"] = critical_guest_coverage
+    report["registration_tail_observer_hook_coverage"] = register_tail_coverage
+    report["registration_tail_same_transaction_verified"] = False
     report["guest_chain_diagnosis"] = diagnose_guest_chain(
         events, critical_guest_coverage)
     report["operator_stopped_without_app_reset"] = script_error == "operator_stopped"
