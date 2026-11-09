@@ -251,6 +251,36 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
             "registration_response_handler_entered",
             "first_basic_utid_observed"),
     }
+    # Only phase requests emitted AFTER the actual Second callback are
+    # relevant to the next screen. A requested phase is not proof a Unity
+    # view was rendered, and an observer attached late may miss that callback.
+    phase_names = {
+        15: "MT_SELECT_ICON", 16: "MT_INPUT_NAME",
+        17: "MT_INPUT_BIRTH", 18: "MT_SELECT_COUNTRY",
+        19: "MT_CONFIRMATION", 20: "MT_MOVING",
+        21: "PROLOGUE", 22: "PROLOGUE2",
+        23: "GEST_CONFIRMATION", 24: "ALL_END",
+    }
+    second_index = next(
+        (i for i, x in enumerate(events)
+         if x.get("event") == "firstboot_confirm_gest_second_entered"), None)
+    post_second_phase_requests = []
+    if second_index is not None:
+        for x in events[second_index+1:]:
+            if x.get("event") != "firstboot_go_to_phase_entered":
+                continue
+            number = x.get("phase_index")
+            if type(number) is not int or not 0 <= number <= 25:
+                continue
+            post_second_phase_requests.append({
+                "index": number,
+                "enum_name": phase_names.get(number, "OTHER_FIRSTBOOT_PHASE"),
+                "elapsed_ms": x.get("elapsed_ms")
+                if type(x.get("elapsed_ms")) is int else None,
+                "request_only_not_confirmed_render": True,
+            })
+            if len(post_second_phase_requests) >= 16:
+                break
     delta = None
     if times["first_basic_utid_observed"] is not None and \
             times["registration_response_handler_entered"] is not None:
@@ -278,6 +308,10 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
                 "auth_manager_register_user_entered" in order,
             "chronological_pairs": pairs,
             "same_server_transaction_verified": False,
+            "post_second_phase_requests": post_second_phase_requests,
+            "second_callback_observed_before_phase_tracking":
+                second_index is not None,
+            "phase_is_actual_rendered_ui_verified": False,
         },
         "auth": {
             "registration_serializer_entered": register_request,
