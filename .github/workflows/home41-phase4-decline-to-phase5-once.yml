@@ -16,7 +16,7 @@ concurrency:
 jobs:
   one-original-phase4-opt-out:
     if: contains(github.event.head_commit.message, '[home41-phase4-decline-once]')
-    name: Click ONLY optional telemetry 不同意, verify original FirstBoot Phase 5
+    name: Click official 不同意 once, inspect native Phase and masked post-decline screen
     runs-on: ubuntu-24.04
     timeout-minutes: 70
     steps:
@@ -32,10 +32,12 @@ jobs:
           python -m py_compile \
             ci/home41_emulator_arm64_realm.py \
             ci/home41_phase4_decline_once.py \
+            ci/home41_phase4_post_decline_capture.py \
             ci/home41_phase4_masked_capture.py \
             ci/home41_terms_probe.py
           node --check ci/home41_arm64_auth_timeline.js
           python -m unittest discover -s ci -p 'test_home41_phase4_decline_once.py' -v
+          python -m unittest discover -s ci -p 'test_home41_phase4_post_decline_capture.py' -v
           python -m unittest discover -s ci -p 'test_home41_phase4_masked_capture.py' -v
           python -m unittest discover -s ci -p 'test_home41_post_terms_phase.py' -v
           python -m unittest discover -s ci -p 'test_home41_terms_both_and_next.py' -v
@@ -94,6 +96,8 @@ jobs:
             ci-frida-results/home41_post_terms_phase_report.json
             ci-frida-results/home41_phase4_decline/phase4_before_masked.png
             ci-frida-results/home41_phase4_decline/phase4_decline_status.json
+            ci-frida-results/home41_phase4_decline/post_decline_masked.png
+            ci-frida-results/home41_phase4_decline/post_decline_capture_status.json
           retention-days: 1
           if-no-files-found: warn
 
@@ -114,6 +118,8 @@ jobs:
                   for k in ('status','decline_button_tapped','post_decline_screen_changed',
                             'agree_button_tapped','account_registration_attempted'):
                       out.write(f'- Phase 4 {k}: {opt.get(k)}\n')
+                  capture=r.get('post_decline_capture',{})
+                  out.write('- Phase 4 post-decline masked screen saved: '+str(capture.get('masked_screenshot_saved'))+'\n')
                   post=r.get('post_phase4_native',{})
                   for k in ('status','current_phase_index','current_phase_name',
                             'last_requested_phase_index','last_requested_phase_name',
