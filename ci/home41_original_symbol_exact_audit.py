@@ -18,6 +18,22 @@ TARGETS = {
     "adjacent_conditional_callback": 0x1D2F9F8,
     "register_serializer": 0x1D334A4,
     "registration_response": 0x1D33294,
+    "token_expiry_getter": 0x1F27198,
+    "create_token_serializer": 0x1D35888,
+    "create_token_response": 0x1D35AD0,
+}
+
+# Keep exact original IL2CppDumper naming, including its two-dollar separator.
+# Construct the separator explicitly to avoid tooling escaping variations.
+SEP = chr(36) * 2
+EXPECTED_EXACT_IDENTITIES = {
+    "manager_tail_direct_callee": "ApiRequestCreateToken" + SEP + ".ctor",
+    "token_expiry_getter":
+        "ILib.Unity.Net.ApiRequestBase" + SEP + "get_IsTokenExpire",
+    "create_token_serializer":
+        "ApiRequestCreateToken" + SEP + "SerializeRequestParameter",
+    "create_token_response":
+        "ApiRequestCreateToken" + SEP + "CallAfterResponse",
 }
 
 
@@ -65,6 +81,10 @@ def inspect(script):
                 if following is not None and not exact else None),
             "nearby_method_ownership_verified": False,
             "runtime_entry_observed": False,
+            "expected_exact_original_name": EXPECTED_EXACT_IDENTITIES.get(label),
+            "expected_exact_name_matches": (
+                EXPECTED_EXACT_IDENTITIES[label] in methods.get(rva, [])
+                if label in EXPECTED_EXACT_IDENTITIES else None),
         }
     manager = result["ApiManagerLogin.AtuhRegisterUser"]
     if not manager["is_exact_method_entry"] or not any(
@@ -80,6 +100,9 @@ def inspect(script):
         "methods": result,
         "runtime_registration_observed": False,
         "server_guest_account_confirmed": False,
+        "expected_create_token_identity_verified": all(
+            result[key]["expected_exact_name_matches"] is True
+            for key in EXPECTED_EXACT_IDENTITIES),
         "six_digit_home_id_verified": False,
     }
 
@@ -100,7 +123,9 @@ def markdown(report):
         out.append("| §{}§ | §{}§ | {} | {} |".format(
             label, item["rva"], names or "没有（不可推断归属）",
             "是" if item["is_exact_method_entry"] else "否"))
-    out += ["", "注意：仅验证原始方法地址索引与实际静态 BL/B 的对应关系。",
+    out += ["", "CreateToken 及 token expiry 关联方法的原版名称全量匹配：" +
+            str(report["expected_create_token_identity_verified"]) + "。", "",
+            "注意：仅验证原始方法地址索引与实际静态 BL/B 的对应关系。",
             "没有实际运行 HOME，不证明真实委托触发、HTTP 请求发送、",
             "服务端注册成功、首次 basic.utid 或冷启动 ID 恢复。"]
     return "\n".join(out).replace("§", chr(96)) + "\n"
