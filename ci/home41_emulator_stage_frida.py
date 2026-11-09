@@ -74,9 +74,18 @@ class StageMonitor:
         if not self.server.is_file() or not self.script_path.is_file():
             self.setup = "frida_server_or_script_missing"
             return False
+        # GitHub-hosted Android AVD occasionally restarts adbd between
+        # boot completion and original HOME launch. Retry only ADB setup,
+        # never restart HOME, clear app data, or repeat user UI operations.
         root = diag.adb("root", timeout=40)
-        if not root or root.returncode != 0:
-            self.setup = "adb_root_unavailable"
+        for _ in range(3):
+            if root is not None and root.returncode == 0:
+                break
+            diag.adb("wait-for-device", timeout=40)
+            time.sleep(4)
+            root = diag.adb("root", timeout=40)
+        if root is None or root.returncode != 0:
+            self.setup = "adb_root_unavailable_after_bounded_retry"
             return False
         diag.adb("wait-for-device", timeout=40)
         probe = diag.adb("shell", "getprop", "ro.product.cpu.abi")
