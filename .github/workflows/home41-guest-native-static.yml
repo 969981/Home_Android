@@ -24,7 +24,7 @@ jobs:
           set -euo pipefail
           python -m py_compile ci/home41_guest_native_static.py ci/test_home41_guest_native_static.py
           python -m unittest discover -s ci -p 'test_home41_guest_native_static.py' -v
-      - name: Byte-verified original method windows
+      - name: Byte-verified original confirmation callbacks and delegate callees
         run: |
           set -euo pipefail
           apk="$(find ROMS/4.1.0 -maxdepth 1 -type f -name '*.apk' -print -quit)"
