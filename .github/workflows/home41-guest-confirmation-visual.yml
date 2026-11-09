@@ -99,6 +99,7 @@ jobs:
             ci-frida-results/home41_nintendo_no_link/no_link_before_masked.png
             ci-frida-results/home41_nintendo_no_link/no_link_once_status.json
             ci-frida-results/home41_guest_confirmation/guest_confirmation_masked.png
+            ci-frida-results/home41_guest_confirmation/guest_buttons_only.png
             ci-frida-results/home41_guest_confirmation/guest_capture_status.json
           retention-days: 1
           if-no-files-found: warn
@@ -123,7 +124,7 @@ jobs:
                               'further_confirmation_tapped','registration_button_tapped'):
                       out.write(f'- Choice {key}: {choice.get(key)}\n')
                   image=data.get('guest_confirmation_visual',{})
-                  for key in ('status','gest_request_proven','masked_image_saved','next_screen_clicked','registration_attempted'):
+                  for key in ('status','gest_request_proven','masked_image_saved','buttons_detail_saved','next_screen_clicked','registration_attempted'):
                       out.write(f'- Guest visual {key}: {image.get(key)}\n')
                   phase=data.get('post_no_link_native',{})
                   for key in ('status','current_phase_index','current_phase_name',
