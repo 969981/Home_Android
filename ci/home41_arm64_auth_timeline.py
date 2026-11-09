@@ -420,6 +420,40 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
                     "request_only_not_confirmed_render": True,
                 }
 
+    # Original method names are now known from the verified 4.1.0 dump.
+    # These entry hooks are stronger than phase-request guesses, but still
+    # do not certify a screen was visibly rendered.
+    post_second_named_ui = []
+    named_ui_first_position = None
+    if second_index is not None:
+        for i, entry in enumerate(events[second_index + 1:], start=second_index + 1):
+            key = entry.get("event")
+            if key not in POST_GUEST_UI_EVENTS:
+                continue
+            if named_ui_first_position is None:
+                named_ui_first_position = i
+            if len(post_second_named_ui) < 32:
+                post_second_named_ui.append({
+                    "method_entry": key,
+                    "stage_hint": POST_GUEST_VIEW_STAGES.get(
+                        key, "unclassified_original_ui"),
+                    "elapsed_ms": entry.get("elapsed_ms")
+                    if type(entry.get("elapsed_ms")) is int else None,
+                    "entry_only_not_render_proof": True,
+                })
+    if second_index is None:
+        named_ui_vs_registration = "second_confirmation_not_observed"
+    elif named_ui_first_position is None and first_manager_position is None:
+        named_ui_vs_registration = "neither_named_ui_nor_manager_observed"
+    elif named_ui_first_position is None:
+        named_ui_vs_registration = "register_manager_without_named_ui_entry"
+    elif first_manager_position is None:
+        named_ui_vs_registration = "named_ui_entry_without_register_manager"
+    elif named_ui_first_position < first_manager_position:
+        named_ui_vs_registration = "named_ui_entered_before_register_manager"
+    else:
+        named_ui_vs_registration = "register_manager_entered_before_named_ui"
+
     delta = None
     if times["first_basic_utid_observed"] is not None and \
             times["registration_response_handler_entered"] is not None:
@@ -451,6 +485,9 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
             "second_callback_observed_before_phase_tracking":
                 second_index is not None,
             "phase_is_actual_rendered_ui_verified": False,
+            "post_second_named_ui_method_entries": post_second_named_ui,
+            "named_ui_vs_register_manager": named_ui_vs_registration,
+            "named_ui_entry_confirms_actual_render": False,
             "next_step_order_after_second": next_step_order,
             "last_requested_phase_before_registration_manager":
                 phase_before_manager,
