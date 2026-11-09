@@ -59,6 +59,9 @@ class RawA64GuestAuditTests(unittest.TestCase):
             "<IIIII",*native.EXPECTED_GUEST_START_THUNK)
         store_pc,store_insn=native.EXPECTED_GUEST_DECISION_STORE
         encoded[store_pc]=struct.pack("<I",store_insn)
+        # BLR X13 (synthetic), not an inferred target identity.
+        encoded[native.EXPECTED_MANAGER_DISPATCH_BLR_PC]=struct.pack(
+            "<I",0xD63F0000 | (13<<5))
         def fake_extract(_so,_segs,pc,length):
             blob=encoded[pc]
             self.assertEqual(len(blob),length)
@@ -66,6 +69,14 @@ class RawA64GuestAuditTests(unittest.TestCase):
         with patch.object(native,"extract_at_rva",side_effect=fake_extract):
             report=native.verify_verified_guest_branch_chain(b"",[])
         self.assertEqual(report["verified_edge_count"],8)
+        self.assertEqual(report["manager_indirect_dispatch_site"]["rva"],
+                         "0x1D2FA20")
+        self.assertEqual(report["manager_indirect_dispatch_site"]["branch_register"],
+                         "X13")
+        self.assertFalse(report["manager_indirect_dispatch_site"][
+            "callee_identity_verified"])
+        self.assertFalse(report["manager_indirect_dispatch_site"][
+            "http_request_send_verified"])
         self.assertFalse(report["actual_server_registration_confirmed"])
         self.assertFalse(report["button_to_delegate_runtime_identity_verified"])
         self.assertEqual(report["guest_start_callback"]["if_true"],
@@ -77,6 +88,14 @@ class RawA64GuestAuditTests(unittest.TestCase):
             x["instruction"]=="B" and
             x["target_rva"]=="0x1D2F8DC"
             for x in report["edges"]))
+        broken=dict(encoded)
+        broken[native.EXPECTED_MANAGER_DISPATCH_BLR_PC]=struct.pack(
+            "<I",0xD503201F)
+        with patch.object(
+                native,"extract_at_rva",
+                side_effect=lambda so,segs,pc,length:broken[pc]):
+            with self.assertRaisesRegex(ValueError,"indirect callsite missing BLR"):
+                native.verify_verified_guest_branch_chain(b"",[])
         broken=dict(encoded)
         broken[0x1DE5690]=struct.pack("<I",0xD503201F)
         with patch.object(
