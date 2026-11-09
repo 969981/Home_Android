@@ -42,7 +42,7 @@ jobs:
           apk="$(find ROMS/4.1.0 -maxdepth 1 -type f -name '*.apk' -print -quit)"
           test -n "$apk"
           python ci/home41_guest_native_static.py --apk "$apk" --output ci-frida-results/home41_guest_native_static.json
-          python ci/home41_guest_dispatch_trace.py --apk "$apk" --output ci-frida-results/home41_guest_manager_x8_static_trace.json
+          python ci/home41_guest_dispatch_trace.py --apk "$apk" --output ci-frida-results/home41_guest_adjacent_callback_x8_static_trace.json
       - name: State verified-only static proof boundary
         if: always()
         shell: bash
@@ -52,7 +52,8 @@ jobs:
             echo ''
             echo '- Original APK and libil2cpp SHA-256 must both match.'
             echo '- Eight static BL/B targets, guest-start callback and guest-decision field store are asserted.'
-            echo '- AtuhRegisterUser BLR at 0x1D2FA20 is byte-asserted, and bounded X8 writes are disassembled, but its runtime indirect target is unknown.'
+            echo '- Original A64 prologue at 0x1D2F9F8 and prior unconditional tail exit isolate a neighboring callback BLR X8 at 0x1D2FA20.'
+            echo '- This adjacent callback is NOT a proven call inside AtuhRegisterUser; its runtime target is unknown.'
             echo '- DecisionGestAccount tail B to AtuhRegisterUser is not a proven runtime registration.'
             echo '- This workflow performs NO HOME UI actions, backend registration, ID or Token observation.'
             echo '- Original avatar, prologue and starter method entry hooks remain awaiting device runtime validation.'
@@ -64,6 +65,6 @@ jobs:
           name: home41-guest-original-arm64-static-direct-calls
           path: |
             ci-frida-results/home41_guest_native_static.json
-            ci-frida-results/home41_guest_manager_x8_static_trace.json
+            ci-frida-results/home41_guest_adjacent_callback_x8_static_trace.json
           retention-days: 7
           if-no-files-found: warn
