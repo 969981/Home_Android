@@ -878,9 +878,25 @@ def run(apk: Path, script_path: Path, serial: str | None,
                              interactive=sys.stdout.isatty())
             except Exception:
                 pass
+    except KeyboardInterrupt:
+        # The operator can inspect an in-progress official HOME UI then
+        # stop the Frida observer without killing, resetting, or logging in.
+        # Always emit a bounded redacted report after detaching.
+        script_error = "operator_stopped"
     except Exception as err:
         script_error = type(err).__name__
     finally:
+        # Also cover Ctrl+C during the observer wait: earlier try-block
+        # snapshot code may have been skipped. Only install booleans leave.
+        if script is not None and ready:
+            try:
+                snapshot = script.exports_sync.snapshot()
+                guest_hook_coverage = sanitize_guest_hook_coverage(snapshot)
+                post_guest_ui_coverage = sanitize_post_guest_ui_hook_coverage(snapshot)
+                critical_guest_coverage = sanitize_guest_chain_critical_coverage(
+                    snapshot)
+            except Exception:
+                pass
         if pid is not None and not resumed:
             try:
                 device.resume(pid)
@@ -898,6 +914,7 @@ def run(apk: Path, script_path: Path, serial: str | None,
     report["guest_chain_critical_hook_coverage"] = critical_guest_coverage
     report["guest_chain_diagnosis"] = diagnose_guest_chain(
         events, critical_guest_coverage)
+    report["operator_stopped_without_app_reset"] = script_error == "operator_stopped"
     report["execution_context"] = (
         "runtime_emulated_arm64_agent" if realm == "emulated"
         else "runtime_device_direct")
@@ -917,7 +934,8 @@ def run(apk: Path, script_path: Path, serial: str | None,
     report["frida_exception_type"] = script_error if script_error in {
         "runtime_script_error", "TransportError", "ServerNotRunningError",
         "InvalidOperationError", "TimedOutError"} else (
-        "other_failure" if script_error else None)
+        "other_failure" if script_error and script_error != "operator_stopped"
+        else None)
     if output:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True)
