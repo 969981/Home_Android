@@ -104,28 +104,29 @@ class GuestChronologyFixtures(unittest.TestCase):
         for name in timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS:
             self.assertIn(name + ":",js)
 
-    def test_manager_blr_rva_report_does_not_claim_calculated_callee_identity(self):
+    def test_adjacent_blr_rva_report_does_not_claim_manager_membership(self):
         cov={name:True for name in timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS}
         steps=[
             ev("firstboot_confirm_gest_second_entered",10),
             ev("auth_manager_register_user_entered",20),
-            {**ev("auth_manager_indirect_dispatch_site_entered",25),
+            {**ev("nearby_conditional_callback_blr_entered",25),
              "dispatch_target_in_original_libil2cpp":True,
              "dispatch_target_rva":0x1D334A4},
-            {**ev("auth_manager_indirect_dispatch_site_entered",26),
+            {**ev("nearby_conditional_callback_blr_entered",26),
              "dispatch_target_in_original_libil2cpp":True,
              "dispatch_target_rva":0x1D334A4},
-            {**ev("auth_manager_indirect_dispatch_site_entered",27),
+            {**ev("nearby_conditional_callback_blr_entered",27),
              "dispatch_target_in_original_libil2cpp":False,
              "dispatch_target_rva":0xDEADBEEF},
         ]
         report=timeline.diagnose_guest_chain(steps,cov)
-        self.assertEqual(report["indirect_dispatch_module_relative_target_rvas"],
+        self.assertEqual(report["nearby_callback_module_relative_target_rvas"],
                          ["0x1D334A4"])
-        self.assertFalse(report["indirect_dispatch_target_function_identity_verified"])
+        self.assertFalse(report["nearby_callback_function_identity_verified"])
+        self.assertFalse(report["nearby_callback_belongs_to_registration_manager_verified"])
         self.assertFalse(report["server_registration_confirmed"])
 
-    def test_manager_dispatch_site_further_narrows_missing_serializer(self):
+    def test_adjacent_blr_does_not_count_as_manager_dispatch(self):
         full = {name:True for name in
                 timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS}
         started = [
@@ -136,14 +137,16 @@ class GuestChronologyFixtures(unittest.TestCase):
         ]
         manager_only = timeline.diagnose_guest_chain(started,full)
         self.assertEqual(manager_only["classification"],
-                         "register_manager_seen_dispatch_not_observed")
+                         "register_manager_seen_serializer_not_observed")
         dispatch = timeline.diagnose_guest_chain(
-            started + [ev("auth_manager_indirect_dispatch_site_entered",27)],
+            started + [ev("nearby_conditional_callback_blr_entered",27)],
             full)
         self.assertEqual(dispatch["classification"],
-                         "manager_indirect_dispatch_reached_serializer_not_observed")
-        self.assertIn("registration_manager_indirect_dispatch",
-                      dispatch["observed_checkpoints"])
+                         "register_manager_seen_serializer_not_observed")
+        self.assertNotIn("registration_manager_indirect_dispatch",
+                         dispatch["observed_checkpoints"])
+        self.assertNotIn("register_dispatch_site",
+                         timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS)
         self.assertFalse(dispatch["server_registration_confirmed"])
         self.assertFalse(dispatch["ui_six_digit_id_verified"])
 
@@ -157,7 +160,7 @@ class GuestChronologyFixtures(unittest.TestCase):
             ev("guest_second_decision_thunk_entered", 32),
             ev("firstboot_decision_gest_account_entered", 40),
             ev("auth_manager_register_user_entered", 100),
-            ev("auth_manager_indirect_dispatch_site_entered", 105),
+            ev("nearby_conditional_callback_blr_entered", 105),
             ev("registration_request_serializer_entered", 110),
             ev("registration_response_handler_entered", 300),
             ev("token_response_handler_entered", 410),
