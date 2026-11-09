@@ -65,6 +65,39 @@ class GuestChronologyFixtures(unittest.TestCase):
         guest=timeline.analyze_events(events,True,None)["guest_path"]
         self.assertEqual(guest["post_second_phase_requests"],[])
 
+    def test_registration_manager_before_any_post_second_navigation(self):
+        result=timeline.analyze_events([
+            ev("firstboot_confirm_gest_second_entered",10),
+            ev("auth_manager_register_user_entered",20),
+            {**ev("firstboot_go_to_phase_entered",30),"phase_index":15},
+        ],True,None)["guest_path"]
+        self.assertEqual(result["next_step_order_after_second"],
+                         "register_manager_entered_before_first_phase_request")
+        self.assertIsNone(
+            result["last_requested_phase_before_registration_manager"])
+
+    def test_phase_request_before_registration_manager_not_actual_render(self):
+        result=timeline.analyze_events([
+            ev("firstboot_confirm_gest_second_entered",10),
+            {**ev("firstboot_go_to_phase_entered",20),"phase_index":21},
+            ev("auth_manager_register_user_entered",30),
+        ],True,None)["guest_path"]
+        self.assertEqual(result["next_step_order_after_second"],
+                         "phase_requested_before_register_manager_entered")
+        self.assertEqual(result["last_requested_phase_before_registration_manager"],
+                         {"index":21,"enum_name":"PROLOGUE",
+                          "request_only_not_confirmed_render":True})
+        self.assertFalse(result["phase_is_actual_rendered_ui_verified"])
+
+    def test_second_not_seen_cannot_guess_next_step_from_phase(self):
+        guest=timeline.analyze_events([
+            {**ev("firstboot_go_to_phase_entered",10),"phase_index":21},
+            ev("auth_manager_register_user_entered",20),
+        ],True,None)["guest_path"]
+        self.assertEqual(guest["next_step_order_after_second"],
+                         "second_confirmation_not_observed")
+        self.assertEqual(guest["post_second_phase_requests"],[])
+
     def test_guest_second_without_registration_is_not_creation(self):
         result = timeline.analyze_events([
             ev("arm64_auth_observer_ready", 1),
