@@ -1028,6 +1028,55 @@ def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
                                     "account_persisted_verified": False,
                                     "registration_completed_verified": False,
                                 }
+                                if getattr(args, "capture_post_guest_first_screen",
+                                           False):
+                                    # Require live no-registration and no-basic
+                                    # counters before photographing the next
+                                    # original guest confirmation page.
+                                    phase_path.write_text(
+                                        json.dumps(result, ensure_ascii=False,
+                                                   indent=2, sort_keys=True) + "\n",
+                                        encoding="utf-8")
+                                    cmd = [
+                                        sys.executable,
+                                        str(Path(__file__).with_name(
+                                            "home41_guest_after_first_visual.py")),
+                                        "--age-report", str(report_path),
+                                        "--phase-report", str(phase_path),
+                                        "--image-out", str(
+                                            guest_dir / "after_first_masked.png"),
+                                        "--buttons-out", str(
+                                            guest_dir / "after_first_buttons.png"),
+                                        "--status-out", str(
+                                            guest_dir / "after_first_capture_status.json"),
+                                    ]
+                                    try:
+                                        proc = subprocess.run(
+                                            cmd, capture_output=True, text=True,
+                                            timeout=60, check=False)
+                                        result["after_first_capture_exit_code"] = proc.returncode
+                                        statusfile = (guest_dir /
+                                            "after_first_capture_status.json")
+                                        if statusfile.is_file():
+                                            x = json.loads(statusfile.read_text(
+                                                encoding="utf-8"))
+                                            result["after_first_visual"] = {
+                                                "status": x.get("status"),
+                                                "native_pre_registration_confirmed":
+                                                    x.get(
+                                                        "native_pre_registration_confirmed"
+                                                    ) is True,
+                                                "masked_image_saved":
+                                                    x.get("masked_image_saved") is True,
+                                                "buttons_detail_saved":
+                                                    x.get("buttons_detail_saved") is True,
+                                                "ui_clicked": False,
+                                            }
+                                    except subprocess.TimeoutExpired:
+                                        result["after_first_visual"] = {
+                                            "status": "after_first_capture_timeout",
+                                            "masked_image_saved": False,
+                                        }
             return result
         if getattr(args, "probe_phase4_decline_once", False):
             # The only permitted UI action on the new Phase 4 screen is the
@@ -1260,6 +1309,8 @@ def main() -> int:
                         help="One disposable-AVD Terms confirmation followed by read-only native phase snapshot; never register")
     parser.add_argument("--authorize-terms-next-phase-once", action="store_true",
                         help="Explicit one-run authorization for original Terms UI on this disposable AVD")
+    parser.add_argument("--capture-post-guest-first-screen", action="store_true",
+                        help="Read-only masked second guest prompt, only when no registration/basic")
     parser.add_argument("--confirm-guest-start-once", action="store_true",
                         help="One original guest start YES; may create a disposable guest, NEVER exports session")
     parser.add_argument("--authorize-disposable-guest-creation-once",
@@ -1380,6 +1431,11 @@ def main() -> int:
             not args.probe_phase4_decline_once,
         )):
         print('{"status":"guest_start_requires_one_shot_user_approval_and_full_original_chain"}')
+        return 2
+    if args.capture_post_guest_first_screen and not (
+            args.confirm_guest_start_once and
+            args.authorize_disposable_guest_creation_once):
+        print('{"status":"after_first_ui_requires_original_guest_yes_single_step"}')
         return 2
     observer = ARM64RealmStageMonitor(
         args.server, args.network_script, args.arm64_script,
@@ -1542,6 +1598,14 @@ def main() -> int:
                     and start.get("nintendo_link_tapped") is False
                     and native.get("native_arm64") is True
                     and native.get("hooks_ready") is True)
+            if args.capture_post_guest_first_screen:
+                visual = (phase_probe_result or {}).get(
+                    "after_first_visual", {})
+                transition_ok = (
+                    transition_ok
+                    and visual.get("native_pre_registration_confirmed") is True
+                    and visual.get("masked_image_saved") is True
+                    and visual.get("buttons_detail_saved") is True)
             return 0 if transition_ok else 3
         if args.confirm_phase4_optout_modal_once:
             modal = (phase_probe_result or {}).get("phase4_modal_probe", {})
