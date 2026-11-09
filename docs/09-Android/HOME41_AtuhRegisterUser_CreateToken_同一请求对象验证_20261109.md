@@ -231,3 +231,52 @@ AuthRegisterUser、CreateToken 使用两个独立集合，各最多存储 64 个
 回归用例位于 `ci/test_home41_guest_persistent_chain.py`。
 本轮仅提交了脚本、测试与静态研究文档，尚未取得新的 Android 会话；
 **不能写为某次真实游客建号或首次 basic.utid 已成功。**
+
+
+# 8. 构造函数返回、地址复用与重复 Second 窗口防误判（2026-11-09 晚）
+
+对第 4、7 节的**实现语义作进一步收紧**：早期“构造函数一进入即缓存地址”的
+方案会在构造函数尚未结束时允许匹配，也无法有效区分同一进程中不同游客确认。
+现版以 `onLeave` 完成证据为门禁，入口仅记录只读元数据。
+
+```text
+第一次 ConfirmGestAccountSecond
+    ├─ guestObservationEpoch += 1，清空三个私有对象缓存
+    ├─ AuthRegisterUser..ctor onEnter
+    │    └─ 暂存私有地址和 epoch，不允许后续直接匹配
+    ├─ AuthRegisterUser..ctor onLeave
+    │    └─ epoch 未改变 → 记录完成地址和时间
+    ├─ AuthRegisterUser.SerializeRequestParameter
+    │    └─ 完成地址一致且不超过 120 秒 → 布尔候选证据
+    │
+    ├─ CreateToken..ctor onEnter
+    │    └─ 检查返回 RVA 是否为 0x1D2F328，暂存私有信息
+    ├─ CreateToken..ctor onLeave
+    │    └─ epoch 未改变 → 记录完成地址和时间
+    └─ CreateToken.SerializeRequestParameter / CallAfterResponse
+         └─ 完成地址一致且不超过 120 秒 → 布尔候选证据
+
+第二次 ConfirmGestAccountSecond（如意外重入）
+    └─ 新 epoch，清空上一轮缓存；Python 只统计第一次确认到此处的窗口
+```
+
+两个新增的原生只读事件为：
+
+- `registration_request_constructor_returned`：注册请求构造函数已返回；
+- `auth_manager_tail_callee_35cc8_returned`：Token 构造函数已返回，
+  如实际原版返回地址匹配则另有 `create_token_ctor_from_tail_callsite_observed:true`。
+
+Python `observe_guest_register_order` 对证据增加了保守判定：对应构造函数
+`returned` 事件必须在匹配的序列化或回调之前出现；只见入口而未见返回，
+即使测试数据中出现匹配布尔值也**不能**宣称对象已完成构造。
+已增加早到序列化、缺失 onLeave、第二次确认跨窗口污染和脱敏反例。
+
+新的 120 秒是证据保鲜上限，**不是原版协议超时时间**。
+对象地址复用仍可发生于 120 秒内，因此这类证据只能叫
+“同一观察窗口中的已完成构造地址匹配”，
+不能把它升级为持久托管对象身份、相同服务器事务或成功建号。
+Hook 安装失败、超过 64 个对象或超过 120 秒造成的缺失应标为
+`NOT_OBSERVED/UNKNOWN`，而不是相反的业务结论。
+
+与之前一样，本节新增结果是代码和离线测试条件，
+目前**没有新的实机 Frida 事件、真实六位 ID 或服务端注册回执**。
