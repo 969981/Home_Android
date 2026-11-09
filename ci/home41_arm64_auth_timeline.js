@@ -938,13 +938,22 @@ function install(lib) {
       return false;
     }
   }
-  registerRequestCtorHookAttached =
-    hook('auth_register_request_ctor', RVA.registerConstructor, {
+  // Optional: failed constructor coverage must not suppress existing
+  // serializer/response observation. Missing match then remains UNKNOWN.
+  try {
+    Interceptor.attach(ptr(RVA.registerConstructor), {
       onEnter(args) {
         recordCtorInstance(args, observedRegisterCtorInstances);
         milestone('registration_request_constructor_entered');
       }
     });
+    registerRequestCtorHookAttached = true;
+  } catch (_) {
+    registerRequestCtorHookAttached = false;
+    emit('optional_hook_attach_failed', {
+      observer: 'auth_register_request_ctor'
+    });
+  }
   guestChainCriticalHookCoverage.register_serializer =
     hook('register_serialize', RVA.registerSerialize, {
       onEnter(args) {
