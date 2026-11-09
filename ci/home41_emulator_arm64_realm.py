@@ -239,6 +239,31 @@ def sanitize_firstboot_ui(raw: object) -> dict:
     }
 
 
+_GUEST_FINAL_CALL_EVENTS = {
+    "second_direct": "guest_second_direct_callee_unclassified_entered",
+    "post_1098": "post_guest_candidate_1098_entered",
+    "post_16f4": "post_guest_candidate_16f4_entered",
+    "register_manager": "auth_manager_register_user_entered",
+}
+
+
+def guest_callback_count_deltas(after: object, before: object,
+                                hook_coverage: object) -> dict:
+    """Categorical post-click deltas; missing hooks/counters stay unknown."""
+    a = after if isinstance(after, dict) else {}
+    b = before if isinstance(before, dict) else {}
+    h = hook_coverage if isinstance(hook_coverage, dict) else {}
+    result = {}
+    for label, event in _GUEST_FINAL_CALL_EVENTS.items():
+        x, y = a.get(event), b.get(event)
+        if (h.get(label) is not True or type(x) is not int or
+                type(y) is not int or x < y or x > 100000 or y < 0):
+            result[label] = None
+        else:
+            result[label] = x - y
+    return result
+
+
 def sanitized_arm64_snapshot(raw: object) -> dict:
     if not isinstance(raw, dict):
         return {"status": "invalid_snapshot"}
@@ -1156,21 +1181,11 @@ def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
                                             ui=live.get("firstboot_ui",{})
                                             hook_coverage=live.get(
                                                 "guest_callback_hook_coverage",{})
-                                            event_hooks={
-                                                "second_direct": (
-                                                    "guest_second_direct_callee_unclassified_entered"),
-                                                "post_1098": "post_guest_candidate_1098_entered",
-                                                "post_16f4": "post_guest_candidate_16f4_entered",
-                                                "register_manager": "auth_manager_register_user_entered",
-                                            }
-                                            # Null means the observer was NOT attached;
-                                            # zero means attached but no new entry.
-                                            call_deltas={
-                                                k: max(0, counts.get(v,0) -
-                                                       pre_guest_final_counts.get(v,0))
-                                                if hook_coverage.get(k) is True else None
-                                                for k,v in event_hooks.items()
-                                            }
+                                            # Null means observer/counter unavailable;
+                                            # zero means attached and no new native entry.
+                                            call_deltas=guest_callback_count_deltas(
+                                                counts,pre_guest_final_counts,
+                                                hook_coverage)
                                             result["post_guest_final_native"] = {
                                                 "guest_callback_hook_coverage": hook_coverage,
                                                 "guest_callback_entries_since_final_click":
