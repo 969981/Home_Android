@@ -631,6 +631,7 @@ def run(apk: Path, script_path: Path, serial: str | None,
     session = None
     script = None
     guest_hook_coverage = sanitize_guest_hook_coverage(None)
+    post_guest_ui_coverage = sanitize_post_guest_ui_hook_coverage(None)
 
     def on_message(message, _data):
         nonlocal ready, script_error
@@ -690,10 +691,12 @@ def run(apk: Path, script_path: Path, serial: str | None,
         # is "unknown", never silently interpreted as "did not execute".
         if script is not None and ready:
             try:
-                guest_hook_coverage = sanitize_guest_hook_coverage(
-                    script.exports_sync.snapshot())
+                snapshot = script.exports_sync.snapshot()
+                guest_hook_coverage = sanitize_guest_hook_coverage(snapshot)
+                post_guest_ui_coverage = sanitize_post_guest_ui_hook_coverage(snapshot)
             except Exception:
                 guest_hook_coverage = sanitize_guest_hook_coverage(None)
+                post_guest_ui_coverage = sanitize_post_guest_ui_hook_coverage(None)
         # The first UTID may be received while waiting; it is never printed in
         # the public event stream. Explicit local RPC optionally displays it.
         if show_local_values and script is not None and ready:
@@ -718,6 +721,7 @@ def run(apk: Path, script_path: Path, serial: str | None,
 
     report = analyze_events(events, ready, script_error)
     report["guest_hook_coverage"] = guest_hook_coverage
+    report["post_guest_ui_hook_coverage"] = post_guest_ui_coverage
     report["execution_context"] = (
         "runtime_emulated_arm64_agent" if realm == "emulated"
         else "runtime_device_direct")
