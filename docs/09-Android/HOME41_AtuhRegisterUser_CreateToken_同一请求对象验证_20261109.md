@@ -185,3 +185,49 @@ py -3 ci/home41_arm64_auth_timeline.py `
 
 文档状态：**STATIC_INDEX_MATCH + READ_ONLY_OBSERVER_PREPARED；
 RUNTIME_SAME_REQUEST_NOT_OBSERVED；SERVER_ACCOUNT_NOT_VERIFIED。**
+
+
+# 7. 2026-11-09：AuthRegisterUser 与 CreateToken 双请求分离、原版直接调用点证明
+
+本轮继续将注册请求构造函数加入观察，避免把 `0x1D35CC8` 的 Token 对象误当作注册 DTO：
+
+| 观察点 | 原版入口 RVA | 作用 | 输出 |
+| --- | --- | --- | --- |
+| AuthRegisterUser 构造函数 | `0x1D336C8` | 观察注册请求实例地址 | `registration_request_constructor_entered` |
+| AuthRegisterUser 序列化 | `0x1D334A4` | 对照注册实例地址 | 仅匹配时 `same_register_ctor_instance_observed: true` |
+| AuthRegisterUser 响应回调 | `0x1D33294` | 对照注册实例地址 | 仅匹配时 `same_register_ctor_instance_observed: true` |
+| CreateToken 构造函数 | `0x1D35CC8` | 观察 Token 请求实例、验证调用点 | 仅匹配时 `create_token_ctor_from_tail_callsite_observed: true` |
+| CreateToken 序列化 | `0x1D35888` | 对照 Token 实例地址 | `same_token_ctor_instance_observed`；仅尾调用对象匹配时 `same_token_ctor_from_tail_instance_observed` |
+| CreateToken 响应回调 | `0x1D35AD0` | 对照 Token 实例地址 | 同上 |
+
+**新增 AArch64 调用点确认：**
+
+```asm
+0x1D2F324  BL 0x1D35CC8   ; 已静态验证的调用指令
+0x1D2F328  ...              ; BL 的架构返回位置（callsite+4）
+```
+
+此时在 `ApiRequestCreateToken..ctor` 函数入口，Frida 的 `this.returnAddress`
+正常应指向 `libil2cpp.so + 0x1D2F328`。
+观察器只在 Frida 内部与这个模块基址加 RVA 比较，不输出绝对返回地址或指针。
+未观察到这个返回地址时不标记匹配，不能据此断言代码路径未运行。
+
+**新的脱敏报告证据字段（均非服务端证明）：**
+
+- `guest_register_entry_order.same_auth_register_request_instance_observed`：
+  同一次 Second 确认之后，注册请求序列化或回调曾与本窗口内的注册构造函数出现地址相等；
+- `guest_register_entry_order.create_token_ctor_direct_register_tail_caller_observed`：
+  Token 构造函数实际观察到来自静态验证的 `0x1D2F324 BL` 调用点；
+- `guest_register_entry_order.same_token_request_from_register_tail_callsite_observed`：
+  后续 Token 序列化/响应的对象地址与这个调用点产生的构造对象匹配；
+- `register_request_ctor_hook_attached`：注册构造入口的实际 Hook 安装布尔状态；
+- `token_request_hook_coverage`：Token 序列化/响应 Hook 的真实安装布尔值。
+
+Second 确认时只清除 Frida 私有的缓存集合，不修改 HOME 内存状态；
+AuthRegisterUser、CreateToken 使用两个独立集合，各最多存储 64 个候选对象地址。
+未匹配的输出只代表**没有取得匹配证据**，不是明确对象不一致；
+地址复用和线程交错仍需由调用栈、对象生命周期及服务器响应进一步排除。
+
+回归用例位于 `ci/test_home41_guest_persistent_chain.py`。
+本轮仅提交了脚本、测试与静态研究文档，尚未取得新的 Android 会话；
+**不能写为某次真实游客建号或首次 basic.utid 已成功。**
