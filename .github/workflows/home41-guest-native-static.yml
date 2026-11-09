@@ -22,8 +22,10 @@ jobs:
       - name: Offline A64 and raw ELF safety tests
         run: |
           set -euo pipefail
-          python -m py_compile ci/home41_guest_native_static.py ci/test_home41_guest_native_static.py
+          python -m py_compile ci/home41_guest_native_static.py ci/test_home41_guest_native_static.py ci/home41_emulator_arm64_realm.py ci/test_home41_guest_callback_coverage.py
+          node --check ci/home41_arm64_auth_timeline.js
           python -m unittest discover -s ci -p 'test_home41_guest_native_static.py' -v
+          python -m unittest discover -s ci -p 'test_home41_guest_callback_coverage.py' -v
       - name: Byte-verified original confirmation callbacks and delegate callees
         run: |
           set -euo pipefail
