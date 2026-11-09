@@ -539,7 +539,7 @@ def run(apk: Path, script_path: Path, serial: str | None,
         script = session.create_script(script_source)
         script.on("message", on_message)
         script.load()
-        if realm == "native":
+        if realm == "native" and not attach_running:
             device.resume(pid)
             resumed = True
         # Wait for either first validated basic, hook failure or timeout.
