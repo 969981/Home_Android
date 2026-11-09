@@ -104,6 +104,27 @@ class GuestChronologyFixtures(unittest.TestCase):
         for name in timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS:
             self.assertIn(name + ":",js)
 
+    def test_manager_blr_rva_report_does_not_claim_calculated_callee_identity(self):
+        cov={name:True for name in timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS}
+        steps=[
+            ev("firstboot_confirm_gest_second_entered",10),
+            ev("auth_manager_register_user_entered",20),
+            {**ev("auth_manager_indirect_dispatch_site_entered",25),
+             "dispatch_target_in_original_libil2cpp":True,
+             "dispatch_target_rva":0x1D334A4},
+            {**ev("auth_manager_indirect_dispatch_site_entered",26),
+             "dispatch_target_in_original_libil2cpp":True,
+             "dispatch_target_rva":0x1D334A4},
+            {**ev("auth_manager_indirect_dispatch_site_entered",27),
+             "dispatch_target_in_original_libil2cpp":False,
+             "dispatch_target_rva":0xDEADBEEF},
+        ]
+        report=timeline.diagnose_guest_chain(steps,cov)
+        self.assertEqual(report["indirect_dispatch_module_relative_target_rvas"],
+                         ["0x1D334A4"])
+        self.assertFalse(report["indirect_dispatch_target_function_identity_verified"])
+        self.assertFalse(report["server_registration_confirmed"])
+
     def test_manager_dispatch_site_further_narrows_missing_serializer(self):
         full = {name:True for name in
                 timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS}
