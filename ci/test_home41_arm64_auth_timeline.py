@@ -308,6 +308,81 @@ class AuthTimelineTests(unittest.TestCase):
                              "attach_running_without_restart")
             self.assertTrue(data["observer_might_have_missed_first_basic"])
 
+    def test_operator_interrupt_saves_redacted_report_without_restart(self):
+        class Agent:
+            def __init__(self):
+                self.callback=None
+                self.exports_sync=SimpleNamespace(snapshot=self.snapshot)
+            def on(self, name, callback):
+                self.callback=callback
+            def load(self):
+                for event,offset in (
+                    ("arm64_auth_observer_ready",1),
+                    ("firstboot_confirm_gest_second_entered",10),
+                    ("guest_second_decision_thunk_entered",11),
+                    ("firstboot_decision_gest_account_entered",12)):
+                    self.callback(transport(event,offset,
+                        raw_utid="SHOULD_NOT_LEAK",
+                        token="SECRET"),None)
+            def snapshot(self):
+                return {
+                    "guest_chain_critical_hook_coverage": {
+                        k: True for k in module.GUEST_CHAIN_CRITICAL_HOOK_KEYS
+                    },
+                    "raw_utid": "SHOULD_NOT_LEAK",
+                    "token": "SECRET",
+                }
+        class Session:
+            def __init__(self):
+                self.agent=Agent()
+                self.detached=False
+            def create_script(self, content):
+                return self.agent
+            def detach(self):
+                self.detached=True
+        class Device:
+            def __init__(self):
+                self.session=Session()
+                self.attached=[]
+            def attach(self,pid):
+                self.attached.append(pid)
+                return self.session
+            def spawn(self,*args):
+                raise AssertionError("existing HOME must not be restarted")
+            def resume(self,*args):
+                raise AssertionError("existing HOME must not be resumed")
+        device=Device()
+        with tempfile.TemporaryDirectory() as root:
+            path=Path(root)/"agent.js"
+            path.write_text("// test",encoding="utf8")
+            report=Path(root)/"safe.json"
+            with patch.object(module, "preflight_for_realm",return_value={
+                    "result":"native_arm64_original_apk_preflight_ok"}), \
+                 patch.object(module.core, "installed_apk_integrity",
+                              return_value="installed_apk_hash_verified"), \
+                 patch.object(module.core,"adb",
+                     return_value=SimpleNamespace(returncode=0,stdout="2345")), \
+                 patch.dict(sys.modules,{"frida":SimpleNamespace(
+                     get_usb_device=lambda timeout:device)}), \
+                 patch.object(module.threading.Event,"wait",
+                              side_effect=KeyboardInterrupt), \
+                 redirect_stdout(io.StringIO()):
+                rc=module.run(Path("unused.apk"),path,None,90,report,
+                              False,realm="native",attach_running=True)
+            self.assertEqual(rc,3)
+            self.assertTrue(device.session.detached)
+            self.assertEqual(device.attached,[2345])
+            exported=report.read_text(encoding="utf8")
+            self.assertNotIn("SHOULD_NOT_LEAK",exported)
+            self.assertNotIn("SECRET",exported)
+            parsed=json.loads(exported)
+            self.assertTrue(parsed["operator_stopped_without_app_reset"])
+            self.assertTrue(parsed["guest_chain_diagnosis"][
+                "all_critical_hooks_installed"])
+            self.assertEqual(
+                parsed["guest_chain_diagnosis"]["classification"],
+                "decision_controller_seen_register_manager_not_observed")
+
     def test_native_script_contains_expected_anchors_but_no_http_replay(self):
         js=(CI/"home41_arm64_auth_timeline.js").read_text(encoding="utf-8")
         self.assertIn("0x1D334A4",js)
