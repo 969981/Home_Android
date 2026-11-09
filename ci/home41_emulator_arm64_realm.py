@@ -654,6 +654,88 @@ def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
             "current_phase_name": pre_ui.get("original_phase_name"),
         }
         result["observer_stayed_attached_through_terms"] = True
+        if getattr(args, "probe_phase4_decline_once", False):
+            # The only permitted UI action on the new Phase 4 screen is the
+            # official privacy-preserving LEFT "不同意" button. The original
+            # ARM64 observer stays attached so we can verify a real Phase 5.
+            result["phase4_decline_probe"] = {
+                "status": "phase4_decline_preflight_rejected",
+                "decline_button_tapped": False,
+                "post_decline_screen_changed": False,
+            }
+            if phase.get("status") != "phase_4_advertisement_sdk_confirmed":
+                return result
+            phase_path = out / "home41_phase4_predecline_native.json"
+            phase_path.write_text(
+                json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8")
+            phase4_dir = out / "home41_phase4_decline"
+            cmd = [
+                sys.executable,
+                str(Path(__file__).with_name("home41_phase4_decline_once.py")),
+                "--decline-optional-collection-once",
+                "--age-report", str(report_path),
+                "--phase-report", str(phase_path),
+                "--output-dir", str(phase4_dir),
+            ]
+            try:
+                proc = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=90, check=False)
+                result["phase4_decline_helper_exit_code"] = proc.returncode
+                status_path = phase4_dir / "phase4_decline_status.json"
+                if status_path.is_file():
+                    private = json.loads(status_path.read_text(encoding="utf-8"))
+                    result["phase4_decline_probe"] = {
+                        "status": private.get("status"),
+                        "decline_button_tapped":
+                            private.get("decline_button_tapped") is True,
+                        "post_decline_screen_changed":
+                            private.get("post_decline_screen_changed") is True,
+                        "agree_button_tapped": False,
+                        "account_registration_attempted": False,
+                        "nintendo_account_linking_attempted": False,
+                        "utid_saved": False,
+                    }
+            except subprocess.TimeoutExpired:
+                result["phase4_decline_probe"]["status"] = "decline_helper_timeout"
+            if result["phase4_decline_probe"]["decline_button_tapped"]:
+                time.sleep(2)
+                # Retained original observer, no new injected action.
+                after = sanitized_arm64_snapshot(
+                    observer.arm64_agent.exports_sync.snapshot())
+                ui = after.get("firstboot_ui", {})
+                counts = after.get("counts", {})
+                before_go = phase.get("go_to_phase_entries", 0)
+                after_go = counts.get("firstboot_go_to_phase_entered", 0)
+                index = ui.get("original_phase_enum_index")
+                requested = ui.get("last_requested_phase_enum_index")
+                success = bool(
+                    after.get("native_arm64") is True
+                    and after.get("hooks_ready") is True
+                    and ui.get("original_phase_mapping_verified") is True
+                    and type(index) is int and index == 5
+                    and type(requested) is int and requested == 5
+                    and type(after_go) is int
+                    and type(before_go) is int
+                    and after_go > before_go
+                )
+                result["post_phase4_native"] = {
+                    "status": "phase_5_warning_confirmed" if success
+                              else "phase_after_decline_not_confirmed_as_warning",
+                    "native_arm64": after.get("native_arm64") is True,
+                    "hooks_ready": after.get("hooks_ready") is True,
+                    "current_phase_index": index if type(index) is int else None,
+                    "current_phase_name": ui.get("original_phase_name"),
+                    "last_requested_phase_index":
+                        requested if type(requested) is int else None,
+                    "last_requested_phase_name": ui.get("last_requested_phase_name"),
+                    "go_to_phase_entries_before": before_go,
+                    "go_to_phase_entries_after": (
+                        after_go if type(after_go) is int else None),
+                    "account_registration_attempted": False,
+                    "nintendo_account_linking_attempted": False,
+                    "utid_saved": False,
+                }
         return result
     except Exception as exc:
         result["status"] = "post_terms_phase_probe_exception"
@@ -684,6 +766,10 @@ def main() -> int:
                         help="One disposable-AVD Terms confirmation followed by read-only native phase snapshot; never register")
     parser.add_argument("--authorize-terms-next-phase-once", action="store_true",
                         help="Explicit one-run authorization for original Terms UI on this disposable AVD")
+    parser.add_argument("--probe-phase4-decline-once", action="store_true",
+                        help="Opt-out of optional telemetry on verified original Phase 4, then read only Phase 5")
+    parser.add_argument("--authorize-phase4-decline-once", action="store_true",
+                        help="One-shot opt out via original LEFT different-from-agree button")
     parser.add_argument("--advance-birthday-once", action="store_true",
                         help="Opt in: after native/UI full-date verification, tap only age form Next once; no Terms consent")
     parser.add_argument("--probe-native-full-date-select", action="store_true",
@@ -719,6 +805,12 @@ def main() -> int:
                 args.advance_birthday_once and
                 args.probe_native_full_date_select):
             print('{"status":"terms_phase_probe_requires_explicit_optin_and_verified_age_flow"}')
+            return 2
+    if args.probe_phase4_decline_once:
+        if not (args.authorize_phase4_decline_once and
+                args.probe_terms_next_phase_once and
+                args.authorize_terms_next_phase_once):
+            print('{"status":"phase4_decline_requires_separate_explicit_one_shot_optin"}')
             return 2
     observer = ARM64RealmStageMonitor(
         args.server, args.network_script, args.arm64_script,
@@ -826,6 +918,15 @@ def main() -> int:
             and phase.get("native_arm64") is True
             and phase.get("hooks_ready") is True
         )
+        if args.probe_phase4_decline_once:
+            nxt = (phase_probe_result or {}).get("phase4_decline_probe", {})
+            post = (phase_probe_result or {}).get("post_phase4_native", {})
+            return 0 if (
+                base_ok and probe_ok
+                and nxt.get("decline_button_tapped") is True
+                and nxt.get("post_decline_screen_changed") is True
+                and post.get("status") == "phase_5_warning_confirmed"
+            ) else 3
         return 0 if base_ok and probe_ok else 3
     return 0 if base_ok else 3
 
