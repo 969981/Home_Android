@@ -57,6 +57,7 @@ jobs:
           p="ci-frida-results/home41_original_register_rva_exact.json"
           r=json.load(open(p,encoding='utf8'))
           assert r['source_method_count'] > 100000
+          assert r['expected_create_token_identity_verified'], 'original_CreateToken_and_expiry_exact_names_mismatch'
           assert not r['runtime_registration_observed']
           assert not r['server_guest_account_confirmed']
           assert not r['six_digit_home_id_verified']
