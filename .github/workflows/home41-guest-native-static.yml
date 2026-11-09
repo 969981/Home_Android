@@ -40,6 +40,19 @@ jobs:
           apk="$(find ROMS/4.1.0 -maxdepth 1 -type f -name '*.apk' -print -quit)"
           test -n "$apk"
           python ci/home41_guest_native_static.py --apk "$apk" --output ci-frida-results/home41_guest_native_static.json
+      - name: State verified-only static proof boundary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## HOME 4.1.0 original AArch64 guest branch proof'
+            echo ''
+            echo '- Original APK and libil2cpp SHA-256 must both match.'
+            echo '- Eight static BL/B targets, guest-start callback and guest-decision field store are asserted.'
+            echo '- DecisionGestAccount tail B to AtuhRegisterUser is not a proven runtime registration.'
+            echo '- This workflow performs NO HOME UI actions, backend registration, ID or Token observation.'
+            echo '- Original avatar, prologue and starter method entry hooks remain awaiting device runtime validation.'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Save non-sensitive call-target audit only
         if: always()
         uses: actions/upload-artifact@v4
