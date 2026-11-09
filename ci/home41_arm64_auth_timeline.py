@@ -453,7 +453,8 @@ def preflight_for_realm(apk: Path, serial: str | None, realm: str) -> dict:
 
 def run(apk: Path, script_path: Path, serial: str | None,
         timeout: int, output: Path | None, show_local_values: bool,
-        realm: str = "native", remote_frida: bool = False) -> int:
+        realm: str = "native", remote_frida: bool = False,
+        attach_running: bool = False) -> int:
     verified = preflight_for_realm(apk, serial, realm)
     good = ("native_arm64_original_apk_preflight_ok" if realm == "native"
             else "emulated_arm64_guest_preflight_ok")
@@ -516,18 +517,22 @@ def run(apk: Path, script_path: Path, serial: str | None,
             print(json.dumps(item, ensure_ascii=False, sort_keys=True), flush=True)
 
     try:
-        if realm == "emulated":
+        if realm == "emulated" or attach_running:
+            # Attach to the ALREADY RUNNING original client without forcing
+            # it to stop, respawn, reset UI or discard userdata.
+            # A late attach CANNOT observe an earlier SetBasic callback.
             # The translated realm exists only AFTER HOME's ARM64 native
             # libraries were brought up. Attach to the user's ALREADY RUNNING
             # original HOME before they advance the registration UI.
             p = core.adb(["shell", "pidof", core.PACKAGE], serial)
             candidates = re.findall(
                 r"\b\d+\b", p.stdout or "") if p and p.returncode == 0 else []
-            if not candidates:
-                raise RuntimeError("HOME_not_running_for_emulated_realm")
+            if len(candidates) != 1:
+                raise RuntimeError("HOME_main_process_pid_not_unique_or_missing")
             pid = int(candidates[0])
             resumed = True  # never resume or kill someone else's process
-            session = device.attach(pid, realm="emulated")
+            session = (device.attach(pid, realm="emulated")
+                       if realm == "emulated" else device.attach(pid))
         else:
             pid = device.spawn([core.PACKAGE])
             session = device.attach(pid)
@@ -579,6 +584,11 @@ def run(apk: Path, script_path: Path, serial: str | None,
     report["execution_context"] = (
         "runtime_emulated_arm64_agent" if realm == "emulated"
         else "runtime_device_direct")
+    report["process_attachment_mode"] = (
+        "attach_running_without_restart"
+        if realm == "emulated" or attach_running else "spawn_original_process")
+    report["observer_might_have_missed_first_basic"] = bool(
+        realm == "emulated" or attach_running)
     report["host_android_primary_abi"] = verified.get("primary_abi", "arm64-v8a")
     report["frida_realm"] = realm
     # The ready event proves hook installation inside the guest realm,
@@ -610,6 +620,9 @@ def main() -> int:
                         help="Use emulated only for x86+ARM NativeBridge Frida realm")
     parser.add_argument("--remote-frida", action="store_true",
                         help="Connect to locally adb-forwarded 127.0.0.1:27042")
+    parser.add_argument("--attach-running", action="store_true",
+                        help="Observe an already running original HOME without restarting it. "
+                             "Attach BEFORE final guest confirmation; earlier hooks are lost.")
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--output", type=Path,
                         help="Optional sanitized summary, never raw IDs or request contents")
@@ -618,7 +631,8 @@ def main() -> int:
     args = parser.parse_args()
     return run(args.apk, args.script, args.serial, args.timeout,
                args.output, args.show_local_values,
-               realm=args.realm, remote_frida=args.remote_frida)
+               realm=args.realm, remote_frida=args.remote_frida,
+               attach_running=args.attach_running)
 
 
 if __name__ == "__main__":
