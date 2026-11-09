@@ -16,7 +16,7 @@ concurrency:
 jobs:
   one-official-guest-start:
     if: contains(github.event.head_commit.message, '[home41-guest-start-once]')
-    name: One official guest Yes after GEST_CONFIRMATION, observe registration/basic counts
+    name: Pixel-verified original guest Yes once, then read-only registration/basic audit
     runs-on: ubuntu-24.04
     timeout-minutes: 70
     steps:
