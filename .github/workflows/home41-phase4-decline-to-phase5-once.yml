@@ -16,7 +16,7 @@ concurrency:
 jobs:
   one-original-phase4-opt-out:
     if: contains(github.event.head_commit.message, '[home41-phase4-decline-once]')
-    name: Click official 不同意 once, inspect native Phase and masked post-decline screen
+    name: Confirm optional-data opt-out popup orange Next, verify native Phase 5
     runs-on: ubuntu-24.04
     timeout-minutes: 70
     steps:
@@ -33,11 +33,13 @@ jobs:
             ci/home41_emulator_arm64_realm.py \
             ci/home41_phase4_decline_once.py \
             ci/home41_phase4_post_decline_capture.py \
+            ci/home41_phase4_decline_modal_next_once.py \
             ci/home41_phase4_masked_capture.py \
             ci/home41_terms_probe.py
           node --check ci/home41_arm64_auth_timeline.js
           python -m unittest discover -s ci -p 'test_home41_phase4_decline_once.py' -v
           python -m unittest discover -s ci -p 'test_home41_phase4_post_decline_capture.py' -v
+          python -m unittest discover -s ci -p 'test_home41_phase4_decline_modal_next_once.py' -v
           python -m unittest discover -s ci -p 'test_home41_phase4_masked_capture.py' -v
           python -m unittest discover -s ci -p 'test_home41_post_terms_phase.py' -v
           python -m unittest discover -s ci -p 'test_home41_terms_both_and_next.py' -v
@@ -85,7 +87,7 @@ jobs:
           pre-emulator-launch-script: adb start-server
           script: |
             set -e
-            python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --select-local-year-1999 --select-local-month-day --probe-native-full-date-select --advance-birthday-once --probe-terms-next-phase-once --authorize-terms-next-phase-once --probe-phase4-decline-once --authorize-phase4-decline-once
+            python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --select-local-year-1999 --select-local-month-day --probe-native-full-date-select --advance-birthday-once --probe-terms-next-phase-once --authorize-terms-next-phase-once --probe-phase4-decline-once --authorize-phase4-decline-once --confirm-phase4-optout-modal-once --authorize-phase4-modal-next-once
 
       - name: Upload ONLY masked Phase 4 pre-opt-out and categorical native evidence
         if: always()
@@ -98,6 +100,8 @@ jobs:
             ci-frida-results/home41_phase4_decline/phase4_decline_status.json
             ci-frida-results/home41_phase4_decline/post_decline_masked.png
             ci-frida-results/home41_phase4_decline/post_decline_capture_status.json
+            ci-frida-results/home41_phase4_decline/modal_before_masked.png
+            ci-frida-results/home41_phase4_decline/phase4_modal_status.json
           retention-days: 1
           if-no-files-found: warn
 
@@ -120,7 +124,10 @@ jobs:
                       out.write(f'- Phase 4 {k}: {opt.get(k)}\n')
                   capture=r.get('post_decline_capture',{})
                   out.write('- Phase 4 post-decline masked screen saved: '+str(capture.get('masked_screenshot_saved'))+'\n')
-                  post=r.get('post_phase4_native',{})
+                  modal=r.get('phase4_modal_probe',{})
+                  out.write('- Opt-out popup confirmed Next tapped: '+str(modal.get('original_optout_modal_next_tapped'))+'\n')
+                  out.write('- Popup new screen observed: '+str(modal.get('post_modal_screen_changed'))+'\n')
+                  post=r.get('post_modal_native',{})
                   for k in ('status','current_phase_index','current_phase_name',
                             'last_requested_phase_index','last_requested_phase_name',
                             'go_to_phase_entries_before','go_to_phase_entries_after'):
