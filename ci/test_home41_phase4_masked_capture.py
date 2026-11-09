@@ -94,6 +94,18 @@ class Phase4CaptureGateTests(unittest.TestCase):
             x["post_terms_phase_probe"]["native_phase"][key]=True
             self.assertFalse(phase4_capture_allowed(x))
 
+    def test_missing_or_invalid_counters_fail_closed_without_exception(self):
+        for key in ("advertisement_sdk_method_entries","go_to_phase_entries"):
+            for value in (None,"1",False,True,-1,0,100001):
+                with self.subTest(key=key,value=value):
+                    x=evidence()
+                    x["post_terms_phase_probe"]["native_phase"][key]=value
+                    self.assertFalse(phase4_capture_allowed(x))
+            with self.subTest(key=key,value="missing"):
+                x=evidence()
+                del x["post_terms_phase_probe"]["native_phase"][key]
+                self.assertFalse(phase4_capture_allowed(x))
+
     def test_bool_is_not_a_phase_index_or_count(self):
         x=evidence()
         x["post_terms_phase_probe"]["native_phase"]["current_phase_index"]=True
