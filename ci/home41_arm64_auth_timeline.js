@@ -189,6 +189,14 @@ let guestCallbackHookCoverage = {
 // Each value is the actual Interceptor.attach outcome, not a guess based
 // on whether the method has been invoked yet.
 let postGuestUiHookCoverage = {};
+// All values are set ONLY by a real Interceptor.attach success/failure.
+// These are the coverage gates for interpreting absent guest callbacks.
+let guestChainCriticalHookCoverage = {
+  confirm_second: false, positive_thunk: false, negative_thunk: false,
+  decision_controller: false, denial_controller: false,
+  go_to_phase: false, register_manager: false,
+  register_serializer: false, register_response: false
+};
 function readCurrentFirstBootPhase() {
   if (firstBootBodyPtr === null) return null;
   try {
@@ -456,7 +464,8 @@ rpc.exports = {
       },
       counts: {...counts},
       guest_callback_hook_coverage: {...guestCallbackHookCoverage},
-      post_guest_ui_hook_coverage: {...postGuestUiHookCoverage}
+      post_guest_ui_hook_coverage: {...postGuestUiHookCoverage},
+      guest_chain_critical_hook_coverage: {...guestChainCriticalHookCoverage}
     };
   },
   // Explicit single local-form interaction. Never used by the ordinary
@@ -620,9 +629,11 @@ function install(lib) {
   function hook(name, rva, callbacks) {
     try {
       Interceptor.attach(ptr(rva), callbacks);
+      return true;
     } catch (_) {
       errors++;
       emit('hook_attach_failed', {observer: name});
+      return false;
     }
   }
   function onEntered(name) {
@@ -656,9 +667,10 @@ function install(lib) {
   optionalUiObserver('guest_confirm_first',
                      RVA.firstBootConfirmGestAccountFirst,
                      'firstboot_confirm_gest_first_entered');
-  optionalUiObserver('guest_confirm_second',
-                     RVA.firstBootConfirmGestAccountSecond,
-                     'firstboot_confirm_gest_second_entered');
+  guestChainCriticalHookCoverage.confirm_second =
+    optionalUiObserver('guest_confirm_second',
+                       RVA.firstBootConfirmGestAccountSecond,
+                       'firstboot_confirm_gest_second_entered');
   // Pure entry counters for next observation: no args, pointers, return
   // values or network content are emitted, and no callback is invoked.
   guestCallbackHookCoverage.second_direct =
@@ -669,10 +681,14 @@ function install(lib) {
     optionalUiObserver('guest_second_decision_thunk',
                        RVA.guestSecondDecisionThunk,
                        'guest_second_decision_thunk_entered');
+  guestChainCriticalHookCoverage.positive_thunk =
+    guestCallbackHookCoverage.decision_thunk;
   guestCallbackHookCoverage.denial_thunk =
     optionalUiObserver('guest_second_denial_thunk',
                        RVA.guestSecondDenialThunk,
                        'guest_second_denial_thunk_entered');
+  guestChainCriticalHookCoverage.negative_thunk =
+    guestCallbackHookCoverage.denial_thunk;
   guestCallbackHookCoverage.post_1098 =
     optionalUiObserver('post_guest_candidate_1098',
                        RVA.postGuestCandidate1098,
@@ -685,6 +701,8 @@ function install(lib) {
     optionalUiObserver('auth_manager_register_user',
                        RVA.authManagerRegisterUser,
                        'auth_manager_register_user_entered');
+  guestChainCriticalHookCoverage.register_manager =
+    guestCallbackHookCoverage.register_manager;
   // Exact original IL2CPP UI method names and entry RVAs. Pure read-only
   // counters, with the original client's own clicks/decisions. No code calls
   // these native functions, no fields/args/pointers or account IDs exposed.
@@ -741,6 +759,10 @@ function install(lib) {
     postGuestUiHookCoverage[item[0]] =
       optionalUiObserver(item[0], item[1], item[2]);
   }
+  guestChainCriticalHookCoverage.decision_controller =
+    postGuestUiHookCoverage.decision_gest === true;
+  guestChainCriticalHookCoverage.denial_controller =
+    postGuestUiHookCoverage.denial_gest === true;
   // Read-only original FirstBoot phase observation, no workflow changes.
   // Start and original setup callbacks capture the managed instance only
   // inside this private Frida agent. Never publish the instance pointer.
@@ -783,6 +805,7 @@ function install(lib) {
       }
     });
     firstBootGoToPhaseHookAttached = true;
+    guestChainCriticalHookCoverage.go_to_phase = true;
     Interceptor.attach(ptr(RVA.firstBootBodyDestroy), {
       onEnter(args) {
         if (firstBootBodyPtr !== null && firstBootBodyPtr.equals(args[0]))
@@ -793,8 +816,9 @@ function install(lib) {
     emit('optional_hook_attach_failed', {observer: 'firstboot_phase'});
   }
 
-  hook('register_serialize', RVA.registerSerialize,
-       onEntered('registration_request_serializer_entered'));
+  guestChainCriticalHookCoverage.register_serializer =
+    hook('register_serialize', RVA.registerSerialize,
+         onEntered('registration_request_serializer_entered'));
 
   // Static store at 0x1D335BC has ALREADY executed at this instruction.
   // X20 denotes the request DTO and two S32 members start at +0x28/+0x2C.
@@ -827,8 +851,9 @@ function install(lib) {
        onEntered('registration_request_formatter_entered'));
   hook('register_response_formatter', RVA.registerResponseFormatter,
        onEntered('registration_response_formatter_entered'));
-  hook('register_callback', RVA.registerCallback,
-       onEntered('registration_response_handler_entered'));
+  guestChainCriticalHookCoverage.register_response =
+    hook('register_callback', RVA.registerCallback,
+         onEntered('registration_response_handler_entered'));
   hook('token_serialize', RVA.tokenSerialize,
        onEntered('token_request_serializer_entered'));
   hook('token_callback', RVA.tokenCallback,
