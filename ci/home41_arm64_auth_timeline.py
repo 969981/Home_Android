@@ -281,6 +281,45 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
             })
             if len(post_second_phase_requests) >= 16:
                 break
+    # Locate the first registration-manager entry relative to the first
+    # FirstBoot phase request after Second. This is an *event ordering*
+    # comparison only; it does not prove what UI was rendered at that point.
+    first_manager_position = next(
+        (i for i,x in enumerate(events)
+         if x.get("event") == "auth_manager_register_user_entered" and
+         second_index is not None and i > second_index), None)
+    first_phase_position = next(
+        (i for i,x in enumerate(events)
+         if x.get("event") == "firstboot_go_to_phase_entered" and
+         second_index is not None and i > second_index and
+         type(x.get("phase_index")) is int and
+         0 <= x.get("phase_index") <= 25), None)
+    if second_index is None:
+        next_step_order = "second_confirmation_not_observed"
+    elif first_manager_position is None and first_phase_position is None:
+        next_step_order = "no_tracked_next_step_observed"
+    elif first_manager_position is None:
+        next_step_order = "phase_request_observed_before_any_register_manager"
+    elif first_phase_position is None:
+        next_step_order = "register_manager_observed_without_later_phase_request"
+    elif first_manager_position < first_phase_position:
+        next_step_order = "register_manager_entered_before_first_phase_request"
+    else:
+        next_step_order = "phase_requested_before_register_manager_entered"
+
+    phase_before_manager = None
+    if first_manager_position is not None:
+        for x in events[second_index+1:first_manager_position]:
+            if x.get("event") != "firstboot_go_to_phase_entered":
+                continue
+            n = x.get("phase_index")
+            if type(n) is int and 0 <= n <= 25:
+                phase_before_manager = {
+                    "index": n,
+                    "enum_name": phase_names.get(n,"OTHER_FIRSTBOOT_PHASE"),
+                    "request_only_not_confirmed_render": True,
+                }
+
     delta = None
     if times["first_basic_utid_observed"] is not None and \
             times["registration_response_handler_entered"] is not None:
@@ -312,6 +351,9 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
             "second_callback_observed_before_phase_tracking":
                 second_index is not None,
             "phase_is_actual_rendered_ui_verified": False,
+            "next_step_order_after_second": next_step_order,
+            "last_requested_phase_before_registration_manager":
+                phase_before_manager,
         },
         "auth": {
             "registration_serializer_entered": register_request,
