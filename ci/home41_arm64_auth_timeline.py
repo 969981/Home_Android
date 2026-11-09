@@ -74,6 +74,7 @@ EVENT_NAMES = frozenset({
     "post_guest_candidate_1098_entered",
     "post_guest_candidate_16f4_entered",
     "auth_manager_register_user_entered",
+    "auth_manager_indirect_dispatch_site_entered",
     "firstboot_decision_gest_account_entered",
     "firstboot_denial_gest_account_entered",
     "firstboot_guest_start_callback_b84_6_entered",
@@ -129,6 +130,7 @@ OBSERVER_NAMES = frozenset({
     "guest_second_direct_callee_unclassified", "guest_second_decision_thunk",
     "guest_second_denial_thunk", "post_guest_candidate_1098",
     "post_guest_candidate_16f4", "auth_manager_register_user",
+    "register_dispatch_site",
     "decision_gest",
     "denial_gest",
     "guest_start_b84_6",
@@ -296,7 +298,8 @@ def sanitize_post_guest_ui_hook_coverage(snapshot: object) -> dict:
 GUEST_CHAIN_CRITICAL_HOOK_KEYS = (
     "confirm_second", "positive_thunk", "negative_thunk",
     "decision_controller", "denial_controller", "go_to_phase",
-    "register_manager", "register_serializer", "register_response",
+    "register_manager", "register_dispatch_site",
+    "register_serializer", "register_response",
 )
 
 
@@ -316,6 +319,8 @@ GUEST_CHAIN_CHECKPOINTS = (
     ("guest_second_decision_thunk_entered", "positive_decision_thunk"),
     ("firstboot_decision_gest_account_entered", "decision_controller"),
     ("auth_manager_register_user_entered", "registration_manager"),
+    ("auth_manager_indirect_dispatch_site_entered",
+     "registration_manager_indirect_dispatch"),
     ("registration_request_serializer_entered", "registration_serializer"),
     ("registration_response_handler_entered", "registration_response_callback"),
     ("token_response_handler_entered", "token_callback"),
@@ -331,6 +336,7 @@ LIVE_GUEST_CHAIN_EVENTS = frozenset({
     "firstboot_decision_gest_account_entered",
     "firstboot_denial_gest_account_entered",
     "auth_manager_register_user_entered",
+    "auth_manager_indirect_dispatch_site_entered",
     "registration_request_serializer_entered",
     "registration_response_handler_entered",
     "token_response_handler_entered",
@@ -372,8 +378,10 @@ def diagnose_guest_chain(events: list[dict], coverage: dict) -> dict:
         status = "registration_response_callback_seen_result_unknown"
     elif "registration_request_serializer_entered" in seen:
         status = "registration_serializer_seen_http_send_not_proven"
+    elif "auth_manager_indirect_dispatch_site_entered" in seen:
+        status = "manager_indirect_dispatch_reached_serializer_not_observed"
     elif "auth_manager_register_user_entered" in seen:
-        status = "register_manager_seen_serializer_not_observed"
+        status = "register_manager_seen_dispatch_not_observed"
     elif negative:
         status = "denial_branch_observed"
     elif "firstboot_decision_gest_account_entered" in seen:
@@ -435,6 +443,7 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
         "post_guest_candidate_1098_entered",
         "post_guest_candidate_16f4_entered",
         "auth_manager_register_user_entered",
+        "auth_manager_indirect_dispatch_site_entered",
         "firstboot_decision_gest_account_entered",
         "firstboot_denial_gest_account_entered",
         "firstboot_guest_start_callback_b84_6_entered",
@@ -499,6 +508,12 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
         "second_to_registration_manager": chronological_pair(
             "firstboot_confirm_gest_second_entered",
             "auth_manager_register_user_entered"),
+        "manager_to_indirect_dispatch": chronological_pair(
+            "auth_manager_register_user_entered",
+            "auth_manager_indirect_dispatch_site_entered"),
+        "indirect_dispatch_to_serializer": chronological_pair(
+            "auth_manager_indirect_dispatch_site_entered",
+            "registration_request_serializer_entered"),
         "manager_to_serializer": chronological_pair(
             "auth_manager_register_user_entered",
             "registration_request_serializer_entered"),
