@@ -55,7 +55,12 @@ const RVA = Object.freeze({
   firstBootContentsFirst: 0x1DE1D84,
   firstBootConfirmTerms: 0x1DE2E4C,
   firstBootConfirmAdvertisementSDK: 0x1DE30E8,
-  firstBootGoToPhase: 0x1DE1C10
+  firstBootGoToPhase: 0x1DE1C10,
+  // Original 4.1.0 FirstBootBodyController guest-confirmation methods.
+  // Read-only observations; never invoke callbacks or create a guest.
+  firstBootConfirmationGestAccount: 0x1DE369C,
+  firstBootConfirmGestAccountFirst: 0x1DE5140,
+  firstBootConfirmGestAccountSecond: 0x1DE5318
 });
 const begun = Date.now();
 const counts = {
@@ -85,7 +90,10 @@ const counts = {
   firstboot_contents_first_entered: 0,
   firstboot_confirmation_terms_entered: 0,
   firstboot_confirmation_advertisement_sdk_entered: 0,
-  firstboot_go_to_phase_entered: 0
+  firstboot_go_to_phase_entered: 0,
+  firstboot_confirmation_gest_account_entered: 0,
+  firstboot_confirm_gest_first_entered: 0,
+  firstboot_confirm_gest_second_entered: 0
 };
 const LIMIT_PER_EVENT = 16;
 let hooksReady = false;
@@ -559,6 +567,15 @@ function install(lib) {
                      'terms_confirm_dialog_open_entered');
   optionalUiObserver('terms_dialog_ok', RVA.termsConfirmDialogOkClick,
                      'terms_confirm_dialog_ok_clicked');
+  optionalUiObserver('guest_confirmation',
+                     RVA.firstBootConfirmationGestAccount,
+                     'firstboot_confirmation_gest_account_entered');
+  optionalUiObserver('guest_confirm_first',
+                     RVA.firstBootConfirmGestAccountFirst,
+                     'firstboot_confirm_gest_first_entered');
+  optionalUiObserver('guest_confirm_second',
+                     RVA.firstBootConfirmGestAccountSecond,
+                     'firstboot_confirm_gest_second_entered');
   // Read-only original FirstBoot phase observation, no workflow changes.
   // Start and original setup callbacks capture the managed instance only
   // inside this private Frida agent. Never publish the instance pointer.
