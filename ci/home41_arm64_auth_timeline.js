@@ -60,7 +60,13 @@ const RVA = Object.freeze({
   // Read-only observations; never invoke callbacks or create a guest.
   firstBootConfirmationGestAccount: 0x1DE369C,
   firstBootConfirmGestAccountFirst: 0x1DE5140,
-  firstBootConfirmGestAccountSecond: 0x1DE5318
+  firstBootConfirmGestAccountSecond: 0x1DE5318,
+  // Byte-verified direct BL targets, still UNCLASSIFIED: these addresses do
+  // not prove a delegate, registration API, or account-creation identity.
+  guestSecondDirectCalleeUnclassified: 0x1DEB3C0,
+  postGuestCandidate1098: 0x1DE1098,
+  postGuestCandidate16F4: 0x1DE16F4,
+  authManagerRegisterUser: 0x1D2F8DC
 });
 const begun = Date.now();
 const counts = {
@@ -93,7 +99,11 @@ const counts = {
   firstboot_go_to_phase_entered: 0,
   firstboot_confirmation_gest_account_entered: 0,
   firstboot_confirm_gest_first_entered: 0,
-  firstboot_confirm_gest_second_entered: 0
+  firstboot_confirm_gest_second_entered: 0,
+  guest_second_direct_callee_unclassified_entered: 0,
+  post_guest_candidate_1098_entered: 0,
+  post_guest_candidate_16f4_entered: 0,
+  auth_manager_register_user_entered: 0
 };
 const LIMIT_PER_EVENT = 16;
 let hooksReady = false;
@@ -576,6 +586,20 @@ function install(lib) {
   optionalUiObserver('guest_confirm_second',
                      RVA.firstBootConfirmGestAccountSecond,
                      'firstboot_confirm_gest_second_entered');
+  // Pure entry counters for next observation: no args, pointers, return
+  // values or network content are emitted, and no callback is invoked.
+  optionalUiObserver('guest_second_direct_callee_unclassified',
+                     RVA.guestSecondDirectCalleeUnclassified,
+                     'guest_second_direct_callee_unclassified_entered');
+  optionalUiObserver('post_guest_candidate_1098',
+                     RVA.postGuestCandidate1098,
+                     'post_guest_candidate_1098_entered');
+  optionalUiObserver('post_guest_candidate_16f4',
+                     RVA.postGuestCandidate16F4,
+                     'post_guest_candidate_16f4_entered');
+  optionalUiObserver('auth_manager_register_user',
+                     RVA.authManagerRegisterUser,
+                     'auth_manager_register_user_entered');
   // Read-only original FirstBoot phase observation, no workflow changes.
   // Start and original setup callbacks capture the managed instance only
   // inside this private Frida agent. Never publish the instance pointer.
