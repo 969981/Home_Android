@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline map observed HOME 4.1.0 BLR X8 in-module RVAs to IL2CppDumper names.
+"""Offline map unclassified adjacent callback BLR X8 RVAs to IL2CppDumper names.
 
 Inputs:
 * A locally obtained ORIGINAL 4.1.0 IL2CppDumper script.json.
@@ -59,8 +59,12 @@ def extract_observed_rvas(report: object) -> list[int]:
     if not isinstance(report,dict):
         return []
     chain=report.get("guest_chain_diagnosis")
-    entries=(chain.get("indirect_dispatch_module_relative_target_rvas")
+    entries=(chain.get("nearby_callback_module_relative_target_rvas")
              if isinstance(chain,dict) else None)
+    # Read older, already-sanitized reports, but do not inherit the previous
+    # unproven "inside AtuhRegisterUser" interpretation.
+    if entries is None and isinstance(chain,dict):
+        entries=chain.get("indirect_dispatch_module_relative_target_rvas")
     if not isinstance(entries,list):
         return []
     normalized=[]
@@ -105,7 +109,8 @@ def resolve_index(
             "runtime_target_execution_verified_by_index_alone":False,
         })
     return {
-        "status":"offline_original_method_index_cross_reference",
+        "status":"offline_unclassified_adjacent_callback_method_cross_reference",
+        "adjacent_callback_belongs_to_registration_manager_verified":False,
         "observed_indirect_dispatch_targets":len(results),
         "resolved_code_targets":results,
         "source_method_index_hash_verified_against_original":False,
@@ -121,7 +126,7 @@ def main() -> int:
     p.add_argument("--script",type=Path,required=True,
                    help="Original HOME 4.1.0 IL2CppDumper script.json")
     p.add_argument("--timeline",type=Path,required=True,
-                   help="Redacted private HOME timeline JSON (not raw Frida logs)")
+                   help="Redacted private HOME timeline JSON (not raw Frida logs; BLR is an adjacent callback)")
     p.add_argument("--output",type=Path,required=True,
                    help="Local output containing only code names and normalized RVAs")
     args=p.parse_args()
