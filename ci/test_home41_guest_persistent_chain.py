@@ -556,5 +556,66 @@ class GuestChronologyFixtures(unittest.TestCase):
              "elapsed_ms":42})
 
 
+    def test_original_bl_callsite_marker_and_same_token_request(self):
+        source=Path(__file__).with_name(
+            "home41_arm64_auth_timeline.js").read_text(encoding="utf-8")
+        self.assertIn("authManagerTailCreateTokenReturnPC: 0x1D2F328",
+                      source)
+        self.assertIn("this.returnAddress.equals(", source)
+        self.assertIn("same_token_ctor_from_tail_instance_observed", source)
+        self.assertIn("observedTokenCtorInstancesFromTail.clear()", source)
+        events=[
+            ev("firstboot_confirm_gest_second_entered", 10),
+            {**ev("auth_manager_tail_callee_35cc8_entered", 20),
+             "create_token_ctor_from_tail_callsite_observed": True},
+            {**ev("token_request_serializer_entered", 30),
+             "same_token_ctor_instance_observed": True,
+             "same_token_ctor_from_tail_instance_observed": True},
+        ]
+        crit={k: True for k in timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS}
+        tail={k: True for k in timeline.REGISTER_TAIL_HOOK_KEYS}
+        report=timeline.observe_guest_register_order(events,crit,tail)
+        self.assertTrue(
+            report["create_token_ctor_direct_register_tail_caller_observed"])
+        self.assertTrue(report[
+            "same_token_request_from_register_tail_callsite_observed"])
+        self.assertFalse(report["identical_native_callstack_proven"])
+        self.assertFalse(report["identical_registration_request_proven"])
+        self.assertFalse(report["server_registration_proven"])
+        without_second=timeline.observe_guest_register_order(
+            events[1:],crit,tail)
+        self.assertFalse(without_second[
+            "same_token_request_from_register_tail_callsite_observed"])
+
+    def test_original_bl_callsite_redaction_is_event_specific(self):
+        msg={"type":"send","payload":{
+            "kind":timeline.KIND, "version":timeline.EXPECTED_VERSION,
+            "event":"auth_manager_tail_callee_35cc8_entered",
+            "elapsed_ms":20,
+            "create_token_ctor_from_tail_callsite_observed":True,
+            "return_address":"0x1D2F328",
+            "secret_token":"DO_NOT_LOG",
+        }}
+        self.assertEqual(timeline.sanitize_timeline_event(msg), {
+            "event":"auth_manager_tail_callee_35cc8_entered",
+            "elapsed_ms":20,
+            "create_token_ctor_from_tail_callsite_observed":True
+        })
+        msg["payload"]["create_token_ctor_from_tail_callsite_observed"]=1
+        self.assertNotIn("create_token_ctor_from_tail_callsite_observed",
+                         timeline.sanitize_timeline_event(msg))
+        msg["payload"]["event"]="token_request_serializer_entered"
+        msg["payload"]["create_token_ctor_from_tail_callsite_observed"]=True
+        msg["payload"]["same_token_ctor_from_tail_instance_observed"]=True
+        self.assertEqual(timeline.sanitize_timeline_event(msg), {
+            "event":"token_request_serializer_entered",
+            "elapsed_ms":20,
+            "same_token_ctor_from_tail_instance_observed":True,
+        })
+        msg["payload"]["event"]="registration_request_serializer_entered"
+        self.assertNotIn("same_token_ctor_from_tail_instance_observed",
+                         timeline.sanitize_timeline_event(msg))
+
+
 if __name__ == "__main__":
     unittest.main()
