@@ -944,6 +944,90 @@ def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
                                     "status": "guest_visual_capture_timeout",
                                     "masked_image_saved": False,
                                 }
+                        if getattr(args, "confirm_guest_start_once", False):
+                            # Only after original GEST_CONFIRMATION visual proof.
+                            # The next official orange "是" MAY initiate one
+                            # real guest registration. No repeated actions and
+                            # never save account response or session credentials.
+                            result["guest_start_probe"] = {
+                                "status": "guest_start_preflight_rejected",
+                                "guest_yes_tapped": False,
+                                "post_click_screen_changed": False,
+                            }
+                            visual = result.get("guest_confirmation_visual", {})
+                            if not (visual.get("gest_request_proven") is True
+                                    and visual.get("masked_image_saved") is True
+                                    and visual.get("buttons_detail_saved") is True):
+                                return result
+                            phase_path.write_text(
+                                json.dumps(result, ensure_ascii=False,
+                                           indent=2, sort_keys=True) + "\n",
+                                encoding="utf-8")
+                            cmd = [
+                                sys.executable,
+                                str(Path(__file__).with_name(
+                                    "home41_guest_start_once.py")),
+                                "--user-authorized-original-guest-yes-once",
+                                "--age-report", str(report_path),
+                                "--phase-report", str(phase_path),
+                                "--output-dir", str(guest_dir),
+                            ]
+                            try:
+                                done = subprocess.run(
+                                    cmd, capture_output=True, text=True,
+                                    timeout=110, check=False)
+                                result["guest_start_helper_exit_code"] = (
+                                    done.returncode)
+                                statusfile = guest_dir / "guest_yes_once_status.json"
+                                if statusfile.is_file():
+                                    g = json.loads(statusfile.read_text(
+                                        encoding="utf-8"))
+                                    result["guest_start_probe"] = {
+                                        "status": g.get("status"),
+                                        "guest_yes_tapped":
+                                            g.get("guest_yes_tapped") is True,
+                                        "post_click_screen_changed":
+                                            g.get("post_click_screen_changed") is True,
+                                        "nintendo_link_tapped": False,
+                                        "additional_signup_ui_tapped": False,
+                                        "raw_post_click_image_saved": False,
+                                        "token_saved": False,
+                                    }
+                            except subprocess.TimeoutExpired:
+                                result["guest_start_probe"]["status"] = (
+                                    "guest_start_helper_timeout")
+                            if result["guest_start_probe"]["guest_yes_tapped"]:
+                                time.sleep(10)
+                                current = sanitized_arm64_snapshot(
+                                    observer.arm64_agent.exports_sync.snapshot())
+                                c = current.get("counts", {})
+                                ui = current.get("firstboot_ui", {})
+                                result["post_guest_start_native"] = {
+                                    "native_arm64": current.get("native_arm64") is True,
+                                    "hooks_ready": current.get("hooks_ready") is True,
+                                    "registration_serializer_entries": c.get(
+                                        "registration_request_serializer_entered", 0),
+                                    "registration_response_handler_entries": c.get(
+                                        "registration_response_handler_entered", 0),
+                                    "first_basic_seen":
+                                        current.get("first_basic_seen") is True,
+                                    "first_basic_utid_event_count": c.get(
+                                        "first_basic_utid_observed", 0),
+                                    "guest_confirmation_method_entries": c.get(
+                                        "firstboot_confirmation_gest_account_entered", 0),
+                                    "guest_first_method_entries": c.get(
+                                        "firstboot_confirm_gest_first_entered", 0),
+                                    "guest_second_method_entries": c.get(
+                                        "firstboot_confirm_gest_second_entered", 0),
+                                    "last_requested_phase_index":
+                                        ui.get("last_requested_phase_enum_index"),
+                                    "last_requested_phase_name":
+                                        ui.get("last_requested_phase_name"),
+                                    "raw_utid_saved": False,
+                                    "token_saved": False,
+                                    "account_persisted_verified": False,
+                                    "registration_completed_verified": False,
+                                }
             return result
         if getattr(args, "probe_phase4_decline_once", False):
             # The only permitted UI action on the new Phase 4 screen is the
@@ -1176,6 +1260,11 @@ def main() -> int:
                         help="One disposable-AVD Terms confirmation followed by read-only native phase snapshot; never register")
     parser.add_argument("--authorize-terms-next-phase-once", action="store_true",
                         help="Explicit one-run authorization for original Terms UI on this disposable AVD")
+    parser.add_argument("--confirm-guest-start-once", action="store_true",
+                        help="One original guest start YES; may create a disposable guest, NEVER exports session")
+    parser.add_argument("--authorize-disposable-guest-creation-once",
+                        action="store_true",
+                        help="Explicitly approve one guest-start UI click on disposable CI AVD")
     parser.add_argument("--capture-guest-confirmation-screen", action="store_true",
                         help="Read-only masked UI after live GEST_CONFIRMATION request; no registration")
     parser.add_argument("--probe-nintendo-no-link-once", action="store_true",
@@ -1277,6 +1366,21 @@ def main() -> int:
             and args.authorize_irreversible_nintendo_no_link_once):
         print('{"status":"guest_ui_capture_requires_one_shot_no_link_proof"}')
         return 2
+    if args.confirm_guest_start_once and not all((
+            args.authorize_disposable_guest_creation_once,
+            args.capture_guest_confirmation_screen,
+            args.probe_nintendo_no_link_once,
+            args.authorize_irreversible_nintendo_no_link_once,
+            args.capture_phase7_requested_screen,
+            args.probe_phase4_agree_once,
+            args.authorize_phase4_agree_once,
+            args.probe_terms_next_phase_once,
+            args.authorize_terms_next_phase_once,
+            not args.assisted_single_signup,
+            not args.probe_phase4_decline_once,
+        )):
+        print('{"status":"guest_start_requires_one_shot_user_approval_and_full_original_chain"}')
+        return 2
     observer = ARM64RealmStageMonitor(
         args.server, args.network_script, args.arm64_script,
         select_year_1999=args.select_local_year_1999,
@@ -1366,7 +1470,11 @@ def main() -> int:
         "arm64_il2cpp_hooks_ready": snapshot.get("hooks_ready"),
         "birthdate_ui": snapshot.get("birthdate_ui"),
         "first_basic_utid_observed": snapshot.get("first_basic_seen"),
-        "account_registration": "not_attempted",
+        "account_registration": (
+            "one_guest_start_ui_attempted"
+            if (phase_probe_result or {}).get(
+                "guest_start_probe", {}).get("guest_yes_tapped") is True
+            else "not_attempted"),
         "post_terms_phase_probe": phase_probe_result,
     }, sort_keys=True))
     # Only success if the emulated ARM64 agent actually installed IL2CPP hooks.
@@ -1422,6 +1530,18 @@ def main() -> int:
                     and req.get("last_requested_phase_index") == 23
                     and req.get("last_requested_phase_name")
                         == "GEST_CONFIRMATION")
+            if args.confirm_guest_start_once:
+                start = (phase_probe_result or {}).get(
+                    "guest_start_probe", {})
+                native = (phase_probe_result or {}).get(
+                    "post_guest_start_native", {})
+                transition_ok = (
+                    transition_ok
+                    and start.get("guest_yes_tapped") is True
+                    and start.get("post_click_screen_changed") is True
+                    and start.get("nintendo_link_tapped") is False
+                    and native.get("native_arm64") is True
+                    and native.get("hooks_ready") is True)
             return 0 if transition_ok else 3
         if args.confirm_phase4_optout_modal_once:
             modal = (phase_probe_result or {}).get("phase4_modal_probe", {})
