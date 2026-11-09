@@ -695,10 +695,20 @@ function install(lib) {
   optionalUiObserver('guest_confirm_first',
                      RVA.firstBootConfirmGestAccountFirst,
                      'firstboot_confirm_gest_first_entered');
-  guestChainCriticalHookCoverage.confirm_second =
-    optionalUiObserver('guest_confirm_second',
-                       RVA.firstBootConfirmGestAccountSecond,
-                       'firstboot_confirm_gest_second_entered');
+  // Limit object identity to the current final Guest confirmation window.
+  // These are private Frida observer values, not writes to HOME.
+  try {
+    Interceptor.attach(ptr(RVA.firstBootConfirmGestAccountSecond), {
+      onEnter() {
+        observedTokenCtorInstances.clear();
+        milestone('firstboot_confirm_gest_second_entered');
+      }
+    });
+    guestChainCriticalHookCoverage.confirm_second = true;
+  } catch (_) {
+    guestChainCriticalHookCoverage.confirm_second = false;
+    emit('optional_hook_attach_failed', {observer: 'guest_confirm_second'});
+  }
   // Pure entry counters for next observation: no args, pointers, return
   // values or network content are emitted, and no callback is invoked.
   guestCallbackHookCoverage.second_direct =
