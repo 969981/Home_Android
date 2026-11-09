@@ -708,24 +708,36 @@ def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
                 requested = ui.get("last_requested_phase_enum_index")
                 before_go = phase.get("go_to_phase_entries")
                 after_go = counts.get("firstboot_go_to_phase_entered")
-                changed = bool(
+                from home41_post_terms_phase import PHASES
+                requested_advanced = bool(
                     current.get("native_arm64") is True
                     and current.get("hooks_ready") is True
-                    and ui.get("original_phase_mapping_verified") is True
-                    and type(phase_index) is int
                     and type(requested) is int
-                    and phase_index == requested
-                    and phase_index != 4
+                    and 5 <= requested < len(PHASES)
+                    and ui.get("last_requested_phase_name") == PHASES[requested]
                     and type(before_go) is int
                     and type(after_go) is int
                     and after_go > before_go
                 )
+                current_confirmed = bool(
+                    requested_advanced
+                    and type(phase_index) is int
+                    and phase_index == requested
+                    and ui.get("original_phase_mapping_verified") is True
+                    and ui.get("original_phase_name") == PHASES[phase_index]
+                )
+                # The controller can be destroyed during a transition,
+                # making current_phase null even though GoToPhase advanced.
+                # Preserve that evidence boundary instead of claiming
+                # arrival at the requested phase.
                 result["post_phase4_agree_native"] = {
                     "status": (
                         "phase_5_warning_confirmed"
-                        if changed and phase_index == 5
-                        else "other_native_phase_after_agree_confirmed"
-                        if changed
+                        if current_confirmed and phase_index == 5
+                        else "native_phase_current_confirmed"
+                        if current_confirmed
+                        else "native_phase_request_advanced_current_unreadable"
+                        if requested_advanced
                         else "native_phase_after_agree_not_confirmed"),
                     "native_arm64": current.get("native_arm64") is True,
                     "hooks_ready": current.get("hooks_ready") is True,
@@ -1160,7 +1172,8 @@ def main() -> int:
                 and agree.get("post_agree_screen_changed") is True
                 and after.get("status") in (
                     "phase_5_warning_confirmed",
-                    "other_native_phase_after_agree_confirmed")
+                    "native_phase_current_confirmed",
+                    "native_phase_request_advanced_current_unreadable")
             ) else 3
         if args.confirm_phase4_optout_modal_once:
             modal = (phase_probe_result or {}).get("phase4_modal_probe", {})
