@@ -248,6 +248,66 @@ class AuthTimelineTests(unittest.TestCase):
             self.assertTrue(report_data["arm64_agent_hooks_armed"])
             self.assertFalse(report_data["six_digit_id_equals_starter_ot_verified"])
 
+    def test_native_attach_running_does_not_spawn_or_kill_existing_home(self):
+        class Agent:
+            def __init__(self):
+                self.callback=None
+            def on(self,event,handler):
+                self.callback=handler
+            def load(self):
+                self.callback(transport("arm64_auth_observer_ready",1),None)
+                self.callback(transport("firstboot_confirm_gest_second_entered",10),None)
+                self.callback(transport("auth_manager_register_user_entered",20),None)
+                self.callback(transport("first_basic_utid_observed",45,
+                    from_common_basic_consumer=True,
+                    raw_utid="DO_NOT_LEAK"),None)
+        class Session:
+            def __init__(self):
+                self.agent=Agent()
+                self.detached=False
+            def create_script(self,source):
+                return self.agent
+            def detach(self):
+                self.detached=True
+        class Device:
+            def __init__(self):
+                self.session=Session()
+                self.attached=[]
+            def spawn(self,*args):
+                raise AssertionError("do not restart original session")
+            def resume(self,*args):
+                raise AssertionError("do not resume existing process")
+            def attach(self,pid):
+                self.attached.append(pid)
+                return self.session
+        device=Device()
+        frida=SimpleNamespace(get_usb_device=lambda timeout:device)
+        with tempfile.TemporaryDirectory() as root:
+            js=Path(root)/"agent.js"
+            js.write_text("// synthetic safe agent",encoding="utf8")
+            output=Path(root)/"redacted.json"
+            def only_pidof(args,serial,timeout=25):
+                self.assertEqual(args,["shell","pidof",module.core.PACKAGE])
+                return SimpleNamespace(returncode=0,stdout="4567\n")
+            with patch.object(module,"preflight_for_realm",return_value={
+                    "result":"native_arm64_original_apk_preflight_ok"}), \
+                 patch.object(module.core,"installed_apk_integrity",
+                              return_value="installed_apk_hash_verified"), \
+                 patch.object(module.core,"adb",side_effect=only_pidof), \
+                 patch.dict(sys.modules,{"frida":frida}), \
+                 redirect_stdout(io.StringIO()):
+                rc=module.run(Path("unused.apk"),js,None,2,output,False,
+                              realm="native",attach_running=True)
+            self.assertEqual(rc,0)
+            self.assertEqual(device.attached,[4567])
+            self.assertTrue(device.session.detached)
+            public=output.read_text(encoding="utf8")
+            self.assertNotIn("DO_NOT_LEAK",public)
+            data=json.loads(public)
+            self.assertEqual(data["process_attachment_mode"],
+                             "attach_running_without_restart")
+            self.assertTrue(data["observer_might_have_missed_first_basic"])
+
     def test_native_script_contains_expected_anchors_but_no_http_replay(self):
         js=(CI/"home41_arm64_auth_timeline.js").read_text(encoding="utf-8")
         self.assertIn("0x1D334A4",js)
