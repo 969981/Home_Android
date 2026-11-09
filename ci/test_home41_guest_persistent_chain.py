@@ -438,8 +438,8 @@ class GuestChronologyFixtures(unittest.TestCase):
         js = Path(__file__).with_name("home41_arm64_auth_timeline.js").read_text(
             encoding="utf-8")
         self.assertIn("authManagerTailCallee35CC8: 0x1D35CC8", js)
-        self.assertIn("observedTokenCtorInstances.has(args[0].toString())", js)
-        self.assertIn("same_token_ctor_instance_observed: true", js)
+        self.assertIn("completedCtorMatch(args, observedTokenCtorInstances)", js)
+        self.assertIn("evidence.same_token_ctor_instance_observed = true", js)
         self.assertIn("token_request_hook_coverage", js)
         message = {"type": "send", "payload": {
             "kind": timeline.KIND,
