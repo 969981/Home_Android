@@ -64,6 +64,11 @@ const RVA = Object.freeze({
   // Byte-verified direct BL targets, still UNCLASSIFIED: these addresses do
   // not prove a delegate, registration API, or account-creation identity.
   guestSecondDirectCalleeUnclassified: 0x1DEB3C0,
+  // Original A64 tail thunks: 0x1DEB4A4 B DecisionGestAccount,
+  // 0x1DEB58C B DenialGestAccount. The binding of official UI buttons
+  // to those delegates is still a separate runtime observation.
+  guestSecondDecisionThunk: 0x1DEB490,
+  guestSecondDenialThunk: 0x1DEB578,
   postGuestCandidate1098: 0x1DE1098,
   postGuestCandidate16F4: 0x1DE16F4,
   // The two old "postGuestCandidate" labels are legacy only:
@@ -131,6 +136,8 @@ const counts = {
   firstboot_confirm_gest_first_entered: 0,
   firstboot_confirm_gest_second_entered: 0,
   guest_second_direct_callee_unclassified_entered: 0,
+  guest_second_decision_thunk_entered: 0,
+  guest_second_denial_thunk_entered: 0,
   post_guest_candidate_1098_entered: 0,
   post_guest_candidate_16f4_entered: 0,
   auth_manager_register_user_entered: 0,
@@ -176,8 +183,8 @@ let firstBootGoToPhaseHookAttached = false;
 let firstBootAdvertisementSDKHookAttached = false;
 // Fixed-name coverage bits; never contain pointers or captured objects.
 let guestCallbackHookCoverage = {
-  second_direct: false, post_1098: false,
-  post_16f4: false, register_manager: false
+  second_direct: false, decision_thunk: false, denial_thunk: false,
+  post_1098: false, post_16f4: false, register_manager: false
 };
 // Each value is the actual Interceptor.attach outcome, not a guess based
 // on whether the method has been invoked yet.
@@ -658,6 +665,14 @@ function install(lib) {
     optionalUiObserver('guest_second_direct_callee_unclassified',
                        RVA.guestSecondDirectCalleeUnclassified,
                        'guest_second_direct_callee_unclassified_entered');
+  guestCallbackHookCoverage.decision_thunk =
+    optionalUiObserver('guest_second_decision_thunk',
+                       RVA.guestSecondDecisionThunk,
+                       'guest_second_decision_thunk_entered');
+  guestCallbackHookCoverage.denial_thunk =
+    optionalUiObserver('guest_second_denial_thunk',
+                       RVA.guestSecondDenialThunk,
+                       'guest_second_denial_thunk_entered');
   guestCallbackHookCoverage.post_1098 =
     optionalUiObserver('post_guest_candidate_1098',
                        RVA.postGuestCandidate1098,
