@@ -885,6 +885,12 @@ def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
                             "registration_serializer_entries": counts.get(
                                 "registration_request_serializer_entered", -1),
                             "first_basic_seen": snap.get("first_basic_seen"),
+                            "guest_confirmation_method_entries": counts.get(
+                                "firstboot_confirmation_gest_account_entered", 0),
+                            "guest_first_method_entries": counts.get(
+                                "firstboot_confirm_gest_first_entered", 0),
+                            "guest_second_method_entries": counts.get(
+                                "firstboot_confirm_gest_second_entered", 0),
                         }
                         if getattr(args, "capture_guest_confirmation_screen", False):
                             # The current controller may no longer be readable
