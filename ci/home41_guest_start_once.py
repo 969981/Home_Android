@@ -49,7 +49,7 @@ def verified_original_guest_yes_point(png: bytes) -> tuple[int, int] | None:
             (.50,.745,(248,250,245),15),
             (.25,.975,(247,251,247),17),# LEFT "否" button
             (.75,.975,(255,173,4),17),  # RIGHT "是" button
-            (.75,.985,(255,173,4),20),
+            (.75,.985,(255,243,218),35),
         )
         if not all(rgb_near(p(x,y),v,tol) for x,y,v,tol in samples):
             return None
