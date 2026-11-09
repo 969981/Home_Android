@@ -169,6 +169,15 @@ def sanitize_timeline_event(message: object) -> dict | None:
     return clean
 
 
+def sanitize_guest_hook_coverage(snapshot: object) -> dict:
+    """Whitelist only fixed hook-installation statuses, never Frida values."""
+    keys = ("second_direct", "post_1098", "post_16f4", "register_manager")
+    obj = snapshot.get("guest_callback_hook_coverage") if isinstance(snapshot, dict) else None
+    obj = obj if isinstance(obj, dict) else {}
+    return {key: (obj[key] if type(obj.get(key)) is bool else None)
+            for key in keys}
+
+
 def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
     """Produce a conservative sanitized timeline and causality warnings."""
     order = [x.get("event") for x in events]
@@ -407,6 +416,7 @@ def run(apk: Path, script_path: Path, serial: str | None,
     resumed = False
     session = None
     script = None
+    guest_hook_coverage = sanitize_guest_hook_coverage(None)
 
     def on_message(message, _data):
         nonlocal ready, script_error
@@ -458,6 +468,14 @@ def run(apk: Path, script_path: Path, serial: str | None,
             if got_first_basic.is_set() or stop_early.is_set():
                 break
             stop_early.wait(min(0.25, max(0, deadline - time.monotonic())))
+        # Snapshot fixed hook-installation bits before detaching; absence
+        # is "unknown", never silently interpreted as "did not execute".
+        if script is not None and ready:
+            try:
+                guest_hook_coverage = sanitize_guest_hook_coverage(
+                    script.exports_sync.snapshot())
+            except Exception:
+                guest_hook_coverage = sanitize_guest_hook_coverage(None)
         # The first UTID may be received while waiting; it is never printed in
         # the public event stream. Explicit local RPC optionally displays it.
         if show_local_values and script is not None and ready:
@@ -481,6 +499,7 @@ def run(apk: Path, script_path: Path, serial: str | None,
                 pass
 
     report = analyze_events(events, ready, script_error)
+    report["guest_hook_coverage"] = guest_hook_coverage
     report["execution_context"] = (
         "runtime_emulated_arm64_agent" if realm == "emulated"
         else "runtime_device_direct")
