@@ -23,6 +23,14 @@ class RawA64GuestAuditTests(unittest.TestCase):
         self.assertEqual(a64_b_target(0x1000,0x17FFFFFF),0xFFC)
         self.assertIsNone(a64_b_target(0x1000,0x94000004))
 
+    def test_actual_manager_tail_to_1d2f1f8_is_original_B(self):
+        pc,opcode=native.EXPECTED_PRECEDING_BRANCH
+        self.assertEqual(pc,0x1D2F9E8)
+        self.assertEqual(a64_b_target(pc,opcode),0x1D2F1F8)
+        # This is NOT the adjacent callback at 0x1D2F9F8.
+        self.assertNotEqual(a64_b_target(pc,opcode),
+                            native.EXPECTED_ADJACENT_PROLOGUE[0])
+
     def test_call_and_return_are_offset_grounded(self):
         b=struct.pack("<IIII",0x94000002,0xD63F0000,0xD65F03C0,0x17FFFFFF)
         r=audit_bytes(b,0x3000)
