@@ -18,6 +18,7 @@ TREE = ast.parse(SOURCE)
 def extracted_functions():
     allowed = None
     call_events = None
+    ui_events = None
     funs = {}
     for node in TREE.body:
         if isinstance(node, ast.Assign):
@@ -28,14 +29,19 @@ def extracted_functions():
                     allowed = frozenset(ast.literal_eval(node.value.args[0]))
                 elif target == "_GUEST_FINAL_CALL_EVENTS":
                     call_events = ast.literal_eval(node.value)
+                elif target == "_POST_GUEST_UI_EVENTS":
+                    ui_events = ast.literal_eval(node.value)
         elif isinstance(node, ast.FunctionDef) and node.name in (
-                "guest_callback_count_deltas", "sanitized_arm64_snapshot"):
+                "guest_callback_count_deltas", "post_guest_ui_count_deltas",
+                "sanitized_arm64_snapshot"):
             funs[node.name] = node
     assert allowed is not None and call_events is not None
-    assert len(funs) == 2
+    assert ui_events is not None
+    assert len(funs) == 3
     env = {
         "_ALLOWED_AGENT_EVENTS": allowed,
         "_GUEST_FINAL_CALL_EVENTS": call_events,
+        "_POST_GUEST_UI_EVENTS": ui_events,
         "sanitize_birth_ui": lambda _x: {},
         "sanitize_firstboot_ui": lambda _x: {},
     }
@@ -98,6 +104,46 @@ class GuestCallbackCoverageTests(unittest.TestCase):
         self.assertEqual(delta["second_direct"], 1)
         self.assertEqual(delta["register_manager"], 3)
         self.assertEqual(delta["post_1098"], 0)
+
+    def test_named_original_ui_counters_require_installed_hook(self):
+        events=self.ns["_POST_GUEST_UI_EVENTS"]
+        self.assertGreaterEqual(len(events),24)
+        self.assertEqual(len(set(events)),len(events))
+        for native in events.values():
+            self.assertIn(native,self.ns["_ALLOWED_AGENT_EVENTS"])
+            self.assertIn("'" + native + "'",JS_SOURCE)
+        before={event:0 for event in events.values()}
+        after={event:0 for event in events.values()}
+        coverage={label:True for label in events}
+        f=self.ns["post_guest_ui_count_deltas"]
+        self.assertEqual(f(after,before,coverage),{label:0 for label in events})
+        after[events["guest_start_b84_6"]]=1
+        after[events["select_trainer_icon"]]=2
+        after[events["prologue_pokemon_tap"]]=1
+        diff=f(after,before,coverage)
+        self.assertEqual(diff["guest_start_b84_6"],1)
+        self.assertEqual(diff["select_trainer_icon"],2)
+        self.assertEqual(diff["prologue_pokemon_tap"],1)
+        coverage["prologue_pokemon_tap"]=False
+        self.assertIsNone(f(after,before,coverage)["prologue_pokemon_tap"])
+        after[events["select_trainer_icon"]]=-1
+        self.assertIsNone(f(after,before,coverage)["select_trainer_icon"])
+
+    def test_native_snapshot_filters_private_ui_fields(self):
+        events=self.ns["_POST_GUEST_UI_EVENTS"]
+        raw={"counts":{events["select_trainer_icon"]:4,"raw_utid":"private"},
+             "post_guest_ui_hook_coverage":{
+                 "select_trainer_icon":True,
+                 "prologue_pokemon_tap":False,
+                 "guest_start_b84_6":1,
+                 "raw_utid":"1234567890"}}
+        clean=self.ns["sanitized_arm64_snapshot"](raw)
+        self.assertEqual(clean["post_guest_ui_hook_coverage"]["select_trainer_icon"],True)
+        self.assertEqual(clean["post_guest_ui_hook_coverage"]["prologue_pokemon_tap"],False)
+        self.assertIsNone(clean["post_guest_ui_hook_coverage"]["guest_start_b84_6"])
+        self.assertEqual(clean["counts"],{events["select_trainer_icon"]:4})
+        self.assertNotIn("1234567890",json.dumps(clean))
+        self.assertNotIn("private",json.dumps(clean))
 
     def test_missing_or_decreasing_counter_means_unknown_not_zero(self):
         e = self.ns["_GUEST_FINAL_CALL_EVENTS"]
