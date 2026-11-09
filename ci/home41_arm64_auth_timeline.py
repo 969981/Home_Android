@@ -69,6 +69,8 @@ EVENT_NAMES = frozenset({
     "firstboot_confirm_gest_first_entered",
     "firstboot_confirm_gest_second_entered",
     "guest_second_direct_callee_unclassified_entered",
+    "guest_second_decision_thunk_entered",
+    "guest_second_denial_thunk_entered",
     "post_guest_candidate_1098_entered",
     "post_guest_candidate_16f4_entered",
     "auth_manager_register_user_entered",
@@ -124,7 +126,8 @@ OBSERVER_NAMES = frozenset({
     "firstboot_clause", "firstboot_terms_setup",
     "firstboot_checkbox", "terms_dialog_open", "terms_dialog_ok",
     "firstboot_phase", "firstboot_advertisement_sdk", "firstboot_go_to_phase",
-    "guest_second_direct_callee_unclassified", "post_guest_candidate_1098",
+    "guest_second_direct_callee_unclassified", "guest_second_decision_thunk",
+    "guest_second_denial_thunk", "post_guest_candidate_1098",
     "post_guest_candidate_16f4", "auth_manager_register_user",
     "decision_gest",
     "denial_gest",
@@ -219,7 +222,8 @@ def sanitize_timeline_event(message: object) -> dict | None:
 
 def sanitize_guest_hook_coverage(snapshot: object) -> dict:
     """Whitelist only fixed hook-installation statuses, never Frida values."""
-    keys = ("second_direct", "post_1098", "post_16f4", "register_manager")
+    keys = ("second_direct", "decision_thunk", "denial_thunk",
+            "post_1098", "post_16f4", "register_manager")
     obj = snapshot.get("guest_callback_hook_coverage") if isinstance(snapshot, dict) else None
     obj = obj if isinstance(obj, dict) else {}
     return {key: (obj[key] if type(obj.get(key)) is bool else None)
@@ -318,6 +322,8 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
         "firstboot_confirm_gest_first_entered",
         "firstboot_confirm_gest_second_entered",
         "guest_second_direct_callee_unclassified_entered",
+        "guest_second_decision_thunk_entered",
+        "guest_second_denial_thunk_entered",
         "post_guest_candidate_1098_entered",
         "post_guest_candidate_16f4_entered",
         "auth_manager_register_user_entered",
