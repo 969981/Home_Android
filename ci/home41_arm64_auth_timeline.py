@@ -210,6 +210,11 @@ def sanitize_timeline_event(message: object) -> dict | None:
                            "token_response_handler_entered"):
         if source.get("same_token_ctor_instance_observed") is True:
             clean["same_token_ctor_instance_observed"] = True
+        if source.get("same_token_ctor_from_tail_instance_observed") is True:
+            clean["same_token_ctor_from_tail_instance_observed"] = True
+    if source["event"] == "auth_manager_tail_callee_35cc8_entered":
+        if source.get("create_token_ctor_from_tail_callsite_observed") is True:
+            clean["create_token_ctor_from_tail_callsite_observed"] = True
     if source["event"] in ("registration_request_serializer_entered",
                            "registration_response_handler_entered"):
         if source.get("same_register_ctor_instance_observed") is True:
@@ -470,6 +475,15 @@ def observe_guest_register_order(
             e.get("event") in ("registration_request_serializer_entered",
                                "registration_response_handler_entered")
             and e.get("same_register_ctor_instance_observed") is True
+            for e in events[offset:]),
+        "create_token_ctor_direct_register_tail_caller_observed":any(
+            e.get("event") == "auth_manager_tail_callee_35cc8_entered"
+            and e.get("create_token_ctor_from_tail_callsite_observed") is True
+            for e in events[offset:]),
+        "same_token_request_from_register_tail_callsite_observed":any(
+            e.get("event") in ("token_request_serializer_entered",
+                               "token_response_handler_entered")
+            and e.get("same_token_ctor_from_tail_instance_observed") is True
             for e in events[offset:]),
         "identical_native_callstack_proven":False,
         "identical_registration_request_proven":False,
