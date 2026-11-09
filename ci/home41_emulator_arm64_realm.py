@@ -599,6 +599,51 @@ class ARM64RealmStageMonitor(StageMonitor):
         return result
 
 
+def classify_arm64_emulated_runtime(report: object) -> dict:
+    """Reconcile earlier generic NativeBridge preflight with actual Frida proof.
+
+    A report marked "unverified_x86_64_native_bridge" before the ARM64 agent
+    attached must be promoted only if the *later* emulated-realm snapshot
+    actually confirms module loading and installed hooks.  This does not
+    indicate login, guest registration or even a network request.
+    """
+    stage=report.get("stage_monitor") if isinstance(report,dict) else None
+    arm=stage.get("arm64_emulated_realm") if isinstance(stage,dict) else None
+    if not isinstance(arm,dict):
+        return {
+            "runtime_status":"arm64_emulated_realm_not_verified",
+            "frida_arm64_hooks_installed_verified":False,
+            "registration_verified":False,
+            "first_basic_verified":False,
+        }
+    snapshot=arm.get("snapshot")
+    snapshot=snapshot if isinstance(snapshot,dict) else {}
+    conditions=(
+        arm.get("status") == "emulated_realm_attached"
+        and arm.get("agent_script_error") is False
+        and arm.get("error_type") is None
+        and arm.get("arm64_rvas_used_in_native_x64_realm") is False
+        and snapshot.get("native_arm64") is True
+        and snapshot.get("native_module_ready") is True
+        and snapshot.get("hooks_ready") is True
+        and snapshot.get("status") == "snapshot_received"
+        and any(
+            e.get("event")=="arm64_auth_observer_ready"
+            and e.get("hook_failures")==0
+            for e in arm.get("events",[])
+            if isinstance(e,dict)
+        )
+    )
+    return {
+        "runtime_status":(
+            "arm64_nativebridge_frida_hooks_verified"
+            if conditions else "arm64_emulated_realm_not_verified"),
+        "frida_arm64_hooks_installed_verified":bool(conditions),
+        "registration_verified":False,
+        "first_basic_verified":False,
+    }
+
+
 def confirmed_local_date_for_assisted_signup(report: object) -> bool:
     """Require native, visual, and privacy gates before manual registration.
 
@@ -1717,6 +1762,18 @@ def main() -> int:
         # User-authorized assisted signup always advances the already
         # verified official age page once. This does NOT click a ToS button.
         advance_birthday_once=(args.advance_birthday_once or args.assisted_single_signup))
+    # diag.run records only the earlier NativeBridge preflight; its top-level
+    # arm64_frida_runtime_status may otherwise stay "unverified" even after
+    # the ARM64 realm has truly attached and installed native hooks.
+    # Reconcile exclusively from the sanitized Frida snapshot. No signup.
+    realm_proof = classify_arm64_emulated_runtime(report)
+    report["arm64_frida_runtime_status"] = realm_proof["runtime_status"]
+    report["arm64_frida_runtime_verification"] = realm_proof
+    saved_report=Path(args.output)/"home41_emulator_report.json"
+    if saved_report.is_file():
+        saved_report.write_text(
+            json.dumps(report,ensure_ascii=False,indent=2,sort_keys=True)+"\n",
+            encoding="utf-8")
     phase_probe_result = None
     if args.probe_terms_next_phase_once:
         phase_probe_result = run_terms_next_phase_probe(args, report, observer)
