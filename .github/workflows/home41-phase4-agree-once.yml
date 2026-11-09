@@ -32,11 +32,13 @@ jobs:
           python -m py_compile \
             ci/home41_emulator_arm64_realm.py \
             ci/home41_phase4_agree_once.py \
+            ci/home41_post_phase4_agree_screen.py \
             ci/home41_phase4_decline_once.py \
             ci/home41_phase4_masked_capture.py \
             ci/home41_terms_both_and_next.py
           node --check ci/home41_arm64_auth_timeline.js
           python -m unittest discover -s ci -p 'test_home41_phase4_agree_once.py' -v
+          python -m unittest discover -s ci -p 'test_home41_post_phase4_agree_screen.py' -v
           python -m unittest discover -s ci -p 'test_home41_phase4_decline_once.py' -v
           python -m unittest discover -s ci -p 'test_home41_phase4_masked_capture.py' -v
           python -m unittest discover -s ci -p 'test_home41_post_terms_phase.py' -v
@@ -84,7 +86,7 @@ jobs:
           pre-emulator-launch-script: adb start-server
           script: |
             set -e
-            python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --select-local-year-1999 --select-local-month-day --probe-native-full-date-select --advance-birthday-once --probe-terms-next-phase-once --authorize-terms-next-phase-once --probe-phase4-agree-once --authorize-phase4-agree-once
+            python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --select-local-year-1999 --select-local-month-day --probe-native-full-date-select --advance-birthday-once --probe-terms-next-phase-once --authorize-terms-next-phase-once --probe-phase4-agree-once --authorize-phase4-agree-once --capture-phase7-requested-screen
 
       - name: Upload only masked pre-agree screen and phase-only evidence
         if: always()
@@ -95,6 +97,8 @@ jobs:
             ci-frida-results/home41_post_terms_phase_report.json
             ci-frida-results/home41_phase4_agree/phase4_agree_before_masked.png
             ci-frida-results/home41_phase4_agree/phase4_agree_status.json
+            ci-frida-results/home41_after_phase4_agree/next_screen_masked.png
+            ci-frida-results/home41_after_phase4_agree/capture_status.json
           retention-days: 1
           if-no-files-found: warn
 
@@ -116,6 +120,8 @@ jobs:
                                 'post_agree_screen_changed','disagree_button_tapped',
                                 'nintendo_account_linking_attempted'):
                       out.write(f'- Click {field}: {click.get(field)}\n')
+                  capture=report.get('phase7_screen_capture',{})
+                  out.write('- GoToPhase(7) masked next-screen saved: '+str(capture.get('masked_image_saved'))+'\n')
                   native=report.get('post_phase4_agree_native',{})
                   for field in ('status','current_phase_index','current_phase_name',
                                 'last_requested_phase_index','last_requested_phase_name',
