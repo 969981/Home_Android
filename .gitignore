@@ -19,3 +19,8 @@ Thumbs.db
 /reports/**/unity_objects.csv
 /reports/**/unity_errors.csv
 /reports/**/resource_candidates.csv
+
+# HOME local-only Android screenshots and sanitized reports (never commit UI/account data)
+/local-home41-*/
+/private-home41-*/
+/local-home41*.json
