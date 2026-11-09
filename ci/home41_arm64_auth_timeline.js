@@ -109,6 +109,8 @@ const RVA = Object.freeze({
   // constructor, NOT ApiRequestAuthRegisterUser serialization or a send.
   authManagerTailTarget: 0x1D2F1F8,
   authManagerTailCallee35CC8: 0x1D35CC8,
+  // Native BL @ 0x1D2F324 returns to this callsite+4 on ARM64.
+  authManagerTailCreateTokenReturnPC: 0x1D2F328,
   // IMPORTANT: original A64 0x1D2F9F8 is a fresh function prologue
   // after the prior tail-branch at 0x1D2F9E8. The BLR below belongs to
   // an ADJACENT conditional callback helper, not a proven RegisterUser
@@ -213,6 +215,7 @@ let registerTailObserverHookCoverage = {
 // Bounded private identities of CreateToken request instances. Only equality
 // bits are emitted; no pointer or ID is included in any report.
 const observedTokenCtorInstances = new Set();
+const observedTokenCtorInstancesFromTail = new Set();
 const observedRegisterCtorInstances = new Set();
 let registerRequestCtorHookAttached = false;
 let tokenRequestHookCoverage = {serialize: false, callback: false};
@@ -706,6 +709,7 @@ function install(lib) {
     Interceptor.attach(ptr(RVA.firstBootConfirmGestAccountSecond), {
       onEnter() {
         observedTokenCtorInstances.clear();
+        observedTokenCtorInstancesFromTail.clear();
         observedRegisterCtorInstances.clear();
         milestone('firstboot_confirm_gest_second_entered');
       }
@@ -753,17 +757,24 @@ function install(lib) {
     optionalUiObserver('manager_tail_target_1d2f1f8',
                        RVA.authManagerTailTarget,
                        'auth_manager_tail_target_entered');
-  // The original ScriptMethod maps this entry to ApiRequestCreateToken constructor (.ctor).
-  // Retain the legacy event name for older reports. Do NOT claim a native
-  // caller/registration transaction just because a constructor was entered.
+  // This method is ApiRequestCreateToken constructor (.ctor).
+  // A separate original ELF BL @0x1D2F324 has return PC 0x1D2F328.
+  // Frida callsite comparison is local-only and never exports returnAddress.
   try {
     Interceptor.attach(ptr(RVA.authManagerTailCallee35CC8), {
       onEnter(args) {
+        let calledFromTail = false;
         try {
+          calledFromTail = this.returnAddress.equals(
+            ptr(RVA.authManagerTailCreateTokenReturnPC));
           if (!args[0].isNull() && observedTokenCtorInstances.size < 64)
             observedTokenCtorInstances.add(args[0].toString());
+          if (calledFromTail && !args[0].isNull() &&
+              observedTokenCtorInstancesFromTail.size < 64)
+            observedTokenCtorInstancesFromTail.add(args[0].toString());
         } catch (_) {}
-        milestone('auth_manager_tail_callee_35cc8_entered');
+        milestone('auth_manager_tail_callee_35cc8_entered', calledFromTail ?
+          {create_token_ctor_from_tail_callsite_observed: true} : {});
       }
     });
     registerTailObserverHookCoverage.downstream_1d35cc8 = true;
@@ -1012,8 +1023,16 @@ function install(lib) {
     try {
       matched = ctorInstanceMatched(args, observedTokenCtorInstances);
     } catch (_) {}
-    milestone(eventName, matched ?
-      {same_token_ctor_instance_observed: true} : {});
+    let calledFromTailCtor = false;
+    try {
+      calledFromTailCtor = ctorInstanceMatched(args,
+        observedTokenCtorInstancesFromTail);
+    } catch (_) {}
+    const evidence = {};
+    if (matched) evidence.same_token_ctor_instance_observed = true;
+    if (calledFromTailCtor)
+      evidence.same_token_ctor_from_tail_instance_observed = true;
+    milestone(eventName, evidence);
   }
   tokenRequestHookCoverage.serialize = hook('token_serialize',
     RVA.tokenSerialize, {
