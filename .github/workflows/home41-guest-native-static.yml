@@ -1,0 +1,40 @@
+name: HOME 4.1.0 original guest confirmation direct-call static audit
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/home41-guest-native-static.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  original-binary-guest-callgraph:
+    if: contains(github.event.head_commit.message, '[home41-guest-native-static]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Offline A64 and raw ELF safety tests
+        run: |
+          set -euo pipefail
+          python -m py_compile ci/home41_guest_native_static.py ci/test_home41_guest_native_static.py
+          python -m unittest discover -s ci -p 'test_home41_guest_native_static.py' -v
+      - name: Byte-verified original method windows
+        run: |
+          set -euo pipefail
+          apk="$(find ROMS/4.1.0 -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$apk"
+          python ci/home41_guest_native_static.py --apk "$apk" --output ci-frida-results/home41_guest_native_static.json
+      - name: Save non-sensitive call-target audit only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: home41-guest-original-arm64-static-direct-calls
+          path: ci-frida-results/home41_guest_native_static.json
+          retention-days: 7
+          if-no-files-found: warn
