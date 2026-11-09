@@ -356,12 +356,18 @@ def diagnose_guest_chain(events: list[dict], coverage: dict) -> dict:
                 or "firstboot_decision_gest_account_entered" in seen)
     negative = ("guest_second_denial_thunk_entered" in seen
                 or "firstboot_denial_gest_account_entered" in seen)
+    # A forged/misrouted event cannot prove HOME's common basic consumer.
+    basic_with_provenance = any(
+        x.get("event") == "first_basic_utid_observed"
+        and x.get("from_common_basic_consumer") is True for x in following)
     if second is None:
         status = "second_confirmation_not_observed"
     elif positive and negative:
         status = "mixed_guest_decisions_require_instance_correlation"
-    elif "first_basic_utid_observed" in seen:
+    elif basic_with_provenance:
         status = "first_basic_seen_ui_six_digit_id_not_verified"
+    elif "first_basic_utid_observed" in seen:
+        status = "first_basic_event_without_verified_common_caller"
     elif "registration_response_handler_entered" in seen:
         status = "registration_response_callback_seen_result_unknown"
     elif "registration_request_serializer_entered" in seen:
@@ -389,6 +395,7 @@ def diagnose_guest_chain(events: list[dict], coverage: dict) -> dict:
         "missing_or_unverified_critical_hooks": missing,
         "all_events_same_transaction_verified": False,
         "server_registration_confirmed": False,
+        "first_basic_common_caller_verified": basic_with_provenance,
         "ui_six_digit_id_verified": False,
         "cold_start_account_restored_verified": False,
     }
