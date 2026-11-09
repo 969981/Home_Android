@@ -68,6 +68,8 @@ class RawA64GuestAuditTests(unittest.TestCase):
             native.EXPECTED_ADJACENT_RETURN,
         ):
             encoded[pc]=struct.pack("<I",insn)
+        for pc,insn,label in native.EXPECTED_CONDITIONAL_CALLBACK_INSTRUCTIONS:
+            encoded[pc]=struct.pack("<I",insn)
         def fake_extract(_so,_segs,pc,length):
             blob=encoded[pc]
             self.assertEqual(len(blob),length)
@@ -82,6 +84,11 @@ class RawA64GuestAuditTests(unittest.TestCase):
         self.assertFalse(helper["http_request_send_verified"])
         self.assertFalse(helper["atuh_register_user_body_membership_verified"])
         self.assertFalse(helper["original_IL2CPP_method_identity_verified"])
+        self.assertEqual(helper["target_pointer_source_static"],"*(X3+0x18)")
+        self.assertEqual(helper["arg0_source_static"],"*(X3+0x40)")
+        self.assertEqual(helper["arg1_source_static"],"*(X3+0x28)")
+        self.assertFalse(helper["guard_business_meaning_verified"])
+        self.assertEqual(len(helper["guard_and_callback_field_loads"]),8)
         self.assertEqual(helper["boundary_evidence"][
             "adjacent_prologue"]["rva"],"0x1D2F9F8")
         self.assertEqual(helper["boundary_evidence"][
@@ -104,6 +111,14 @@ class RawA64GuestAuditTests(unittest.TestCase):
                 native,"extract_at_rva",
                 side_effect=lambda so,segs,pc,length:broken[pc]):
             with self.assertRaisesRegex(ValueError,"adjacent callback callsite missing BLR"):
+                native.verify_verified_guest_branch_chain(b"",[])
+        broken=dict(encoded)
+        broken[native.EXPECTED_CONDITIONAL_CALLBACK_INSTRUCTIONS[5][0]]=struct.pack(
+            "<I",0xD503201F)
+        with patch.object(native,"extract_at_rva",
+                          side_effect=lambda so,segs,pc,length:broken[pc]):
+            with self.assertRaisesRegex(
+                    ValueError,"adjacent callback parameter/guard mismatch"):
                 native.verify_verified_guest_branch_chain(b"",[])
         broken=dict(encoded)
         broken[native.EXPECTED_ADJACENT_PROLOGUE[0]]=struct.pack(
