@@ -18,11 +18,14 @@ from home41_guest_native_static import (
     APK_SHA, SO_SHA, SO_NAME, elf_load_segments, extract_at_rva,
     EXPECTED_NEARBY_CALLBACK_BLR_PC, EXPECTED_ADJACENT_PROLOGUE,
     EXPECTED_PRECEDING_BRANCH, EXPECTED_ADJACENT_RETURN,
+    a64_b_target,
 )
 
 START_RVA = 0x1D2F8DC
 STOP_RVA_EXCLUSIVE = 0x1D2FA30
 BLR_PC = EXPECTED_NEARBY_CALLBACK_BLR_PC
+MANAGER_TAIL_TARGET = 0x1D2F1F8
+MANAGER_TAIL_WINDOW_BYTES = 0x140  # bounded scan; NOT a function extent
 MAX_FILE = 250_000_000
 
 
@@ -70,11 +73,36 @@ def analyze_original_manager(so: bytes) -> dict:
             raise ValueError(f"adjacent_boundary_opcode_mismatch_at_0x{address:X}")
     if len(match)!=1 or match[0]["mnemonic"]!="blr" or match[0]["operands"]!="x8":
         raise ValueError("expected_original_A64_BLR_X8_instruction_missing")
+    if a64_b_target(*EXPECTED_PRECEDING_BRANCH) != MANAGER_TAIL_TARGET:
+        raise ValueError("original_manager_tail_target_mismatch")
+    # Static disassembly of the ACTUAL tail destination, without claiming
+    # the destination's managed method name, function size or network role.
+    tail_code = extract_at_rva(
+        so,segs,MANAGER_TAIL_TARGET,MANAGER_TAIL_WINDOW_BYTES)
+    tail_instructions = [
+        {
+            "rva":f"0x{ins.address:X}",
+            "opcode":f"0x{struct.unpack('<I',ins.bytes)[0]:08X}",
+            "mnemonic":ins.mnemonic,
+            "operands":ins.op_str,
+        }
+        for ins in decoder.disasm(tail_code,MANAGER_TAIL_TARGET)
+    ]
+    if not tail_instructions or tail_instructions[0]["rva"] != f"0x{MANAGER_TAIL_TARGET:X}":
+        raise ValueError("manager_tail_target_disassembly_empty")
     return {
         "status":"SHA_locked_static_adjacent_callback_boundary_audit",
         "prior_method":"ApiManagerLogin.AtuhRegisterUser",
         "prior_method_entry_rva":f"0x{START_RVA:X}",
         "prior_method_unconditional_tail_branch":boundary[0],
+        "manager_tail_target": {
+            "rva":f"0x{MANAGER_TAIL_TARGET:X}",
+            "bounded_bytes":MANAGER_TAIL_WINDOW_BYTES,
+            "instructions":tail_instructions,
+            "target_official_IL2CPP_name_verified":False,
+            "function_extent_verified":False,
+            "http_sender_identity_verified":False,
+        },
         "unclassified_adjacent_function_prologue":prologue[0],
         "unclassified_adjacent_function_return":returns[0],
         "adjacent_helper_official_method_name_verified":False,
@@ -118,6 +146,9 @@ def main() -> int:
     print("Original HOME 4.1.0 preceding manager / separate adjacent conditional callback:")
     print("BLR X8:",result["dispatch_instruction"])
     print("Prior body tail exit:",result["prior_method_unconditional_tail_branch"])
+    print("AtuhRegisterUser verified branch target 0x1D2F1F8 (bounded disassembly):")
+    for row in result["manager_tail_target"]["instructions"][:48]:
+        print(row["rva"],row["opcode"],row["mnemonic"],row["operands"])
     print("Next prologue:",result["unclassified_adjacent_function_prologue"])
     print("Adjacent callback return:",result["unclassified_adjacent_function_return"])
     print("Potential register definitions; no runtime target claim:")
