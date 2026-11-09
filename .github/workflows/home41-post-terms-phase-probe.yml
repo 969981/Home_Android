@@ -100,7 +100,7 @@ jobs:
           script: |
             set -e
             python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --select-local-year-1999 --select-local-month-day --probe-native-full-date-select --advance-birthday-once --probe-terms-next-phase-once --authorize-terms-next-phase-once
-            python ci/home41_phase4_masked_capture.py --report ci-frida-results/home41_emulator_report.json --output ci-frida-results/home41_phase4_masked.png --status ci-frida-results/home41_phase4_capture_status.json
+            python ci/home41_phase4_masked_capture.py --report ci-frida-results/home41_emulator_report.json --phase-report ci-frida-results/home41_post_terms_phase_report.json --output ci-frida-results/home41_phase4_masked.png --status ci-frida-results/home41_phase4_capture_status.json
 
       - name: Upload only masked Terms UI and categorical phase proof
         if: always()
