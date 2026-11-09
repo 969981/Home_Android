@@ -22,8 +22,10 @@ jobs:
       - name: Offline A64 and raw ELF safety tests
         run: |
           set -euo pipefail
+          python -m pip install -q 'capstone>=5,<6'
           python -m py_compile \
             ci/home41_guest_native_static.py ci/test_home41_guest_native_static.py \
+            ci/home41_guest_dispatch_trace.py \
             ci/home41_emulator_arm64_realm.py ci/test_home41_guest_callback_coverage.py \
             ci/home41_arm64_auth_timeline.py ci/test_home41_arm64_auth_timeline.py \
             ci/test_home41_guest_persistent_chain.py \
@@ -40,6 +42,7 @@ jobs:
           apk="$(find ROMS/4.1.0 -maxdepth 1 -type f -name '*.apk' -print -quit)"
           test -n "$apk"
           python ci/home41_guest_native_static.py --apk "$apk" --output ci-frida-results/home41_guest_native_static.json
+          python ci/home41_guest_dispatch_trace.py --apk "$apk" --output ci-frida-results/home41_guest_manager_x8_static_trace.json
       - name: State verified-only static proof boundary
         if: always()
         shell: bash
@@ -49,7 +52,7 @@ jobs:
             echo ''
             echo '- Original APK and libil2cpp SHA-256 must both match.'
             echo '- Eight static BL/B targets, guest-start callback and guest-decision field store are asserted.'
-            echo '- AtuhRegisterUser BLR at 0x1D2FA20 is byte-asserted, but its indirect target is unknown.'
+            echo '- AtuhRegisterUser BLR at 0x1D2FA20 is byte-asserted, and bounded X8 writes are disassembled, but its runtime indirect target is unknown.'
             echo '- DecisionGestAccount tail B to AtuhRegisterUser is not a proven runtime registration.'
             echo '- This workflow performs NO HOME UI actions, backend registration, ID or Token observation.'
             echo '- Original avatar, prologue and starter method entry hooks remain awaiting device runtime validation.'
@@ -59,6 +62,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: home41-guest-original-arm64-static-direct-calls
-          path: ci-frida-results/home41_guest_native_static.json
+          path: |
+            ci-frida-results/home41_guest_native_static.json
+            ci-frida-results/home41_guest_manager_x8_static_trace.json
           retention-days: 7
           if-no-files-found: warn
