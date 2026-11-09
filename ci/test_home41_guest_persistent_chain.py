@@ -150,6 +150,51 @@ class GuestChronologyFixtures(unittest.TestCase):
         self.assertFalse(dispatch["server_registration_confirmed"])
         self.assertFalse(dispatch["ui_six_digit_id_verified"])
 
+    def test_verified_manager_tail_target_and_unknown_downstream(self):
+        coverage={k:True for k in timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS}
+        events=[
+            ev("firstboot_confirm_gest_second_entered",10),
+            ev("guest_second_decision_thunk_entered",12),
+            ev("firstboot_decision_gest_account_entered",15),
+            ev("auth_manager_register_user_entered",20),
+            ev("auth_manager_tail_target_entered",21),
+            ev("auth_manager_tail_callee_35cc8_entered",30),
+        ]
+        diagnosis=timeline.diagnose_guest_chain(events,coverage)
+        self.assertEqual(diagnosis["classification"],
+                         "register_tail_downstream_seen_serializer_not_observed")
+        self.assertIn("register_manager_tail_target",
+                      diagnosis["observed_checkpoints"])
+        self.assertIn("register_manager_tail_downstream_unclassified",
+                      diagnosis["observed_checkpoints"])
+        self.assertFalse(diagnosis["server_registration_confirmed"])
+        self.assertFalse(diagnosis["ui_six_digit_id_verified"])
+        partial=timeline.diagnose_guest_chain(events[:-1],coverage)
+        self.assertEqual(partial["classification"],
+                         "register_tail_target_seen_downstream_not_observed")
+        self.assertFalse(timeline.diagnose_guest_chain(
+            events[:-2],coverage)["server_registration_confirmed"])
+
+    def test_optional_tail_hook_coverage_is_not_assumed_success(self):
+        self.assertEqual(timeline.sanitize_register_tail_hook_coverage(None),{
+            "tail_target_1d2f1f8":None,
+            "downstream_1d35cc8":None,
+        })
+        result=timeline.sanitize_register_tail_hook_coverage({
+            "registration_tail_observer_hook_coverage":{
+                "tail_target_1d2f1f8":True,
+                "downstream_1d35cc8":2,
+                "raw_account_token":"NEVER_LEAK",
+            }
+        })
+        self.assertIs(result["tail_target_1d2f1f8"],True)
+        self.assertIsNone(result["downstream_1d35cc8"])
+        self.assertNotIn("NEVER_LEAK",str(result))
+        source=Path(__file__).with_name("home41_arm64_auth_timeline.js").read_text(
+            encoding="utf-8")
+        self.assertIn("authManagerTailTarget: 0x1D2F1F8",source)
+        self.assertIn("authManagerTailCallee35CC8: 0x1D35CC8",source)
+
     def test_normal_chronology_is_observed_not_proven_server_success(self):
         events = [
             ev("arm64_auth_observer_ready", 1),
