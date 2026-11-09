@@ -708,13 +708,38 @@ function install(lib) {
                        'auth_manager_register_user_entered');
   guestChainCriticalHookCoverage.register_manager =
     guestCallbackHookCoverage.register_manager;
-  // Instrument the original BLR *callsite*, not its unknown Xn target.
-  // Entering this instruction proves only that the manager reached an
-  // indirect dispatch; it cannot prove an HTTP request was transmitted.
-  guestChainCriticalHookCoverage.register_dispatch_site =
-    optionalUiObserver('register_dispatch_site',
-                       RVA.authManagerIndirectDispatchSite,
-                       'auth_manager_indirect_dispatch_site_entered');
+  // Exact original A64 instruction 0xD63F0100 is BLR X8 at
+  // libil2cpp RVA 0x1D2FA20. Read the CODE POINTER only to classify its
+  // normalized RVA inside the original module; NEVER emit its absolute VA,
+  // an out-of-module address, network values, or other native arguments.
+  // This does NOT identify the target function or prove HTTP transmission.
+  try {
+    Interceptor.attach(ptr(RVA.authManagerIndirectDispatchSite), {
+      onEnter() {
+        const observation = {};
+        try {
+          const codeTarget = this.context.x8;
+          const moduleEnd = lib.base.add(lib.size);
+          const inside = codeTarget.compare(lib.base) >= 0 &&
+                         codeTarget.compare(moduleEnd) < 0;
+          observation.dispatch_target_in_original_libil2cpp = inside;
+          if (inside) {
+            const normalized = codeTarget.sub(lib.base).toUInt32();
+            if (Number.isInteger(normalized) && normalized < lib.size) {
+              observation.dispatch_target_rva = normalized;
+            }
+          }
+        } catch (_) {
+          // Missing/invalid code target remains UNKNOWN, not false.
+        }
+        milestone('auth_manager_indirect_dispatch_site_entered', observation);
+      }
+    });
+    guestChainCriticalHookCoverage.register_dispatch_site = true;
+  } catch (_) {
+    guestChainCriticalHookCoverage.register_dispatch_site = false;
+    emit('optional_hook_attach_failed', {observer: 'register_dispatch_site'});
+  }
   // Exact original IL2CPP UI method names and entry RVAs. Pure read-only
   // counters, with the original client's own clicks/decisions. No code calls
   // these native functions, no fields/args/pointers or account IDs exposed.
