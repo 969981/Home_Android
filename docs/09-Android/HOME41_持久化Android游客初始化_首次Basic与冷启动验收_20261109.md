@@ -108,3 +108,48 @@ py -3 ci/home41_arm64_runtime_acceptance.py `
 - 更新 `.github/workflows/home41-arm64-auth-timeline-tests.yml` 加入这些离线用例。
 
 **本轮未连接用户本人可持久保存的 Android 实例。** 未执行新的游客开户、未获得真实 `basic.utid`、未核对头像或小火龙、未完成冷启动同号测试，亦未验证新增 CI 的执行结果。不得将本地可复验脚本/公开测试“通过”写成已创建真实账号。
+
+
+## 2026-11-09：第二次确认后头像／序章／注册链的进一步分界
+
+**阶段枚举取自原版**：`FirstBootBodyController.Phase` 中
+15=`MT_SELECT_ICON`、16=`MT_INPUT_NAME`、17=`MT_INPUT_BIRTH`、
+21=`PROLOGUE`、22=`PROLOGUE2`、23=`GEST_CONFIRMATION`、24=`ALL_END`。
+阶段枚举存在，不代表游客流程必定到达该页，更不代表页面已经渲染。
+
+`ci/home41_arm64_auth_timeline.py` 新增
+`guest_path.post_second_phase_requests`：只将同一次 Frida
+事件流中 **`firstboot_confirm_gest_second_entered` 之后**真实发生的
+`firstboot_go_to_phase_entered` 分类并保留相对时间。
+每项都标识 `request_only_not_confirmed_render=true`。
+没有第二确认事件（例如观察器附加过晚）时不能将先前 Phase 值错算为“确认后导航”。
+
+应按以下证据分层判断：
+1. 看到 `GoToPhase(15)`：仅说明请求了 `MT_SELECT_ICON`，必须再有对应原版 View 初始化证据或设备上可核对的头像 UI，才算真实出现头像选择页面。
+2. 看到 `GoToPhase(21/22)`：仅说明请求了 `PROLOGUE/PROLOGUE2`，需要初始宝可梦实际界面或具名原生方法再闭合。
+3. `auth_manager_register_user_entered` 命中、随后 `registration_request_serializer_entered` 命中：说明客户端经过注册管理器和序列化入口，仍不能凭这个断言成功发包、服务器建号成功。
+4. `registration_response_handler_entered` 出现：响应处理回调被调用，但未核对成功码；必须继续跟 Token/Login 和正常用户资料 `basic.utid` 及 HOME UI。
+5. 最终确认之后没有头像／序章阶段请求、也没有注册调用：首先检查动态 Hook 覆盖、真实原版页面、网络错误及是否存在转场后新的控制器对象。不要连续重复点击建号按钮。
+
+### 私人持久设备上的实际页面证据
+
+新增 `ci/home41_private_postguest_screen.py`（**仅本机交互终端**），不触发按钮点击、不重启、不改 HOME 存储、不能在 GitHub Actions 中运行。点击完原版最终游客确认后，保留游戏前台，在另一终端执行：
+
+~~~powershell
+py -3 ci/home41_private_postguest_screen.py --label after_guest --i-understand-this-is-private
+~~~
+
+如确实出现头像页、初始宝可梦页，可分别在这些页面运行 `--label avatar`、
+`--label starter`。每个标签仅创建一张私有照片，
+路径为 `local-home41-private/<label>.png`，不会覆盖已有照片。
+**标签是操作者填写的说明，不是算法验证的 UI 身份。**
+输出目录和 `local-home41-*.json` 已加入仓库根目录 `.gitignore`，
+避免误提交；它不代替对截图内容的人工/原生验证。
+
+此类图片可能含用户账号信息，禁止上传到公开 GitHub Actions、
+公开 Issue 或公开 Obsidian。只有确认没有任何身份信息后，
+才考虑手动裁剪必要的非敏感 UI 局部与研究资料核对。
+
+新添本地安全用例 `ci/test_home41_private_postguest_screen.py`：
+禁止 CI/非交互终端、要求 HOME 前台、拒绝覆盖图片和目录穿越。
+本轮依旧没有可访问的持久化 Android 设备，**所有新增动态步骤尚待实机**。
