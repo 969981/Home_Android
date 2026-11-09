@@ -1,0 +1,127 @@
+name: HOME 4.1.0 original Nintendo Account 不关联 one-time proof
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/home41-nintendo-no-link-once.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: home41-nintendo-no-link-one-shot
+  cancel-in-progress: false
+
+jobs:
+  original-no-link:
+    if: contains(github.event.head_commit.message, '[home41-no-link-once]')
+    name: User-confirmed irreversible 不关联 once, observe native phase, stop
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate original APK, native hooks and strict no-link visual guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q pillow 'frida==17.26.1'
+          python -m py_compile \
+            ci/home41_emulator_arm64_realm.py \
+            ci/home41_phase4_agree_once.py \
+            ci/home41_post_phase4_agree_screen.py \
+            ci/home41_nintendo_no_link_once.py \
+            ci/home41_terms_probe.py
+          node --check ci/home41_arm64_auth_timeline.js
+          python -m unittest discover -s ci -p 'test_home41_nintendo_no_link_once.py' -v
+          python -m unittest discover -s ci -p 'test_home41_post_phase4_agree_screen.py' -v
+          python -m unittest discover -s ci -p 'test_home41_phase4_agree_once.py' -v
+          python -m unittest discover -s ci -p 'test_home41_emulator_arm64_realm.py' -v
+          APK="$(find ROMS/4.1.0 -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          test "$(sha256sum "$APK" | cut -d' ' -f1)" = '8dee598028cd70441f645c8fff96b093b76778d625cdf07c60109eced50ffac1'
+          echo "HOME41_APK=$APK" >> "$GITHUB_ENV"
+          mkdir -p ci-frida-results
+
+      - name: Download exact matching Frida server with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          V="$(python -c 'import frida; print(frida.__version__)')"
+          test "$V" = "17.26.1"
+          curl -fLsS --retry 7 --retry-all-errors --retry-delay 3 --retry-max-time 420 \
+            --connect-timeout 20 --max-time 180 \
+            "https://github.com/frida/frida/releases/download/$V/frida-server-$V-android-x86_64.xz" \
+            -o /tmp/home41_frida_server.xz
+          xz -dc /tmp/home41_frida_server.xz > /tmp/home41_frida_server
+          chmod 700 /tmp/home41_frida_server
+          echo "HOME41_FRIDA_SERVER=/tmp/home41_frida_server" >> "$GITHUB_ENV"
+
+      - name: Enable KVM
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -e /dev/kvm
+
+      - name: User confirmed lower 不关联, one official click, then stop
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          ram-size: 4096M
+          heap-size: 512M
+          disable-animations: true
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none -no-metrics
+          pre-emulator-launch-script: adb start-server
+          script: |
+            set -e
+            python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --select-local-year-1999 --select-local-month-day --probe-native-full-date-select --advance-birthday-once --probe-terms-next-phase-once --authorize-terms-next-phase-once --probe-phase4-agree-once --authorize-phase4-agree-once --capture-phase7-requested-screen --probe-nintendo-no-link-once --authorize-irreversible-nintendo-no-link-once
+
+      - name: Upload only already masked pre-no-link page and categorical state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: home41-confirmed-nintendo-no-link-single-step
+          path: |
+            ci-frida-results/home41_post_terms_phase_report.json
+            ci-frida-results/home41_after_phase4_agree/next_screen_masked.png
+            ci-frida-results/home41_after_phase4_agree/capture_status.json
+            ci-frida-results/home41_nintendo_no_link/no_link_before_masked.png
+            ci-frida-results/home41_nintendo_no_link/no_link_once_status.json
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Summarize exactly what original HOME did
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,os
+          p=Path('ci-frida-results/home41_post_terms_phase_report.json')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf8') as out:
+              out.write('\n## Original HOME 4.1.0 Nintendo Account no-link selection\n\n')
+              if not p.is_file():
+                  out.write('No reliable real-app evidence.\n')
+              else:
+                  data=json.loads(p.read_text(encoding='utf8'))
+                  choice=data.get('nintendo_no_link_probe',{})
+                  for key in ('status','original_no_link_button_tapped',
+                              'post_click_screen_changed','nintendo_link_button_tapped',
+                              'further_confirmation_tapped','registration_button_tapped'):
+                      out.write(f'- Choice {key}: {choice.get(key)}\n')
+                  phase=data.get('post_no_link_native',{})
+                  for key in ('status','current_phase_index','current_phase_name',
+                              'last_requested_phase_index','last_requested_phase_name',
+                              'go_to_phase_entries_before','go_to_phase_entries_after'):
+                      out.write(f'- Native {key}: {phase.get(key)}\n')
+              out.write('\nThe tool never clicks the orange 关联 button or proceeds through unknown pages, and does not read/store tokens or UTIDs. A disposable AVD cannot preserve a user-owned HOME account.\n')
+          PY
