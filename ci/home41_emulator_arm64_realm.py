@@ -63,6 +63,8 @@ _ALLOWED_AGENT_EVENTS = frozenset({
     "firstboot_confirm_gest_first_entered",
     "firstboot_confirm_gest_second_entered",
     "guest_second_direct_callee_unclassified_entered",
+    "guest_second_decision_thunk_entered",
+    "guest_second_denial_thunk_entered",
     "post_guest_candidate_1098_entered",
     "post_guest_candidate_16f4_entered",
     "auth_manager_register_user_entered",
@@ -265,6 +267,8 @@ def sanitize_firstboot_ui(raw: object) -> dict:
 
 _GUEST_FINAL_CALL_EVENTS = {
     "second_direct": "guest_second_direct_callee_unclassified_entered",
+    "decision_thunk": "guest_second_decision_thunk_entered",
+    "denial_thunk": "guest_second_denial_thunk_entered",
     "post_1098": "post_guest_candidate_1098_entered",
     "post_16f4": "post_guest_candidate_16f4_entered",
     "register_manager": "auth_manager_register_user_entered",
@@ -363,8 +367,8 @@ def sanitized_arm64_snapshot(raw: object) -> dict:
             k: (raw.get("guest_callback_hook_coverage") or {}).get(k) is True
             if isinstance(raw.get("guest_callback_hook_coverage"), dict)
             else False
-            for k in ("second_direct", "post_1098",
-                      "post_16f4", "register_manager")
+            for k in ("second_direct", "decision_thunk", "denial_thunk",
+                      "post_1098", "post_16f4", "register_manager")
         },
         "post_guest_ui_hook_coverage": {
             k: (raw.get("post_guest_ui_hook_coverage") or {}).get(k)
