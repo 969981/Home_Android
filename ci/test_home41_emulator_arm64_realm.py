@@ -95,6 +95,28 @@ class ARM64RealmContractTests(unittest.TestCase):
         self.assertFalse(mod.classify_arm64_emulated_runtime(
             None)["frida_arm64_hooks_installed_verified"])
 
+    def test_adjacent_callback_is_not_registered_as_required_auth_checkpoint(self):
+        snapshot=mod.sanitized_arm64_snapshot({
+            "native_arm64":True, "hooks_ready":True,
+            "nearby_conditional_callback_blr_hook_attached":True,
+            "counts":{
+                "nearby_conditional_callback_blr_entered":2,
+                "raw_utid":"SECRET",
+                "auth_manager_indirect_dispatch_site_entered":7,
+            },
+            "x8_absolute_address":"PRIVATE_ADDRESS",
+        })
+        self.assertTrue(snapshot["nearby_conditional_callback_blr_hook_attached"])
+        self.assertEqual(snapshot["counts"][
+            "nearby_conditional_callback_blr_entered"],2)
+        self.assertNotIn("auth_manager_indirect_dispatch_site_entered",
+                         snapshot["counts"])
+        self.assertNotIn("SECRET",str(snapshot))
+        self.assertNotIn("PRIVATE_ADDRESS",str(snapshot))
+        absent=mod.sanitized_arm64_snapshot({
+            "nearby_conditional_callback_blr_hook_attached":1})
+        self.assertIsNone(absent["nearby_conditional_callback_blr_hook_attached"])
+
     def test_snapshot_drops_secrets_and_rejects_boolean_counters(self):
         src = {
             "native_arm64": True, "hooks_ready": True,
