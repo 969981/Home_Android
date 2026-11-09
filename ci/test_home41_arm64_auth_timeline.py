@@ -52,6 +52,34 @@ class AuthTimelineTests(unittest.TestCase):
         self.assertNotIn("lng",str(clean))
         self.assertNotIn("cntry",str(clean))
 
+    def test_blr_x8_target_is_normalized_and_secrets_redacted(self):
+        entry = transport(
+            "auth_manager_indirect_dispatch_site_entered", 112,
+            dispatch_target_in_original_libil2cpp=True,
+            dispatch_target_rva=0x1D334A4,
+            raw_target_va="0x9876543210",
+            raw_x8="NON_PUBLIC_POINTER",
+            token="PRIVATE_SESSION_TOKEN",
+            uuid="PRIVATE_UUID")
+        clean = module.sanitize_timeline_event(entry)
+        self.assertEqual(clean["dispatch_target_rva"],0x1D334A4)
+        self.assertIs(clean["dispatch_target_in_original_libil2cpp"],True)
+        for forbidden in ("NON_PUBLIC_POINTER","0x9876543210",
+                          "PRIVATE_SESSION_TOKEN","PRIVATE_UUID","raw_x8"):
+            self.assertNotIn(forbidden,str(clean))
+        off_module=module.sanitize_timeline_event(transport(
+            "auth_manager_indirect_dispatch_site_entered",113,
+            dispatch_target_in_original_libil2cpp=False,
+            dispatch_target_rva=0xDEADBEEF))
+        self.assertIs(off_module["dispatch_target_in_original_libil2cpp"],
+                      False)
+        self.assertNotIn("dispatch_target_rva",off_module)
+        malformed=module.sanitize_timeline_event(transport(
+            "auth_manager_indirect_dispatch_site_entered",113,
+            dispatch_target_in_original_libil2cpp=True,
+            dispatch_target_rva=True))
+        self.assertNotIn("dispatch_target_rva",malformed)
+
     def test_malformed_and_js_error_events_rejected(self):
         self.assertIsNone(module.sanitize_timeline_event({"type":"error","description":"secrets"}))
         self.assertIsNone(module.sanitize_timeline_event({"type":"log","payload":"secrets"}))
