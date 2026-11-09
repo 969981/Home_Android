@@ -467,6 +467,7 @@ class GuestChronologyFixtures(unittest.TestCase):
         observed = [
             ev("firstboot_confirm_gest_second_entered", 10),
             ev("auth_manager_tail_callee_35cc8_entered", 20),
+            ev("auth_manager_tail_callee_35cc8_returned", 21),
             {**ev("token_request_serializer_entered", 25),
              "same_token_ctor_instance_observed": True},
         ]
@@ -500,12 +501,13 @@ class GuestChronologyFixtures(unittest.TestCase):
             "home41_arm64_auth_timeline.js").read_text(encoding="utf-8")
         self.assertIn("registerConstructor: 0x1D336C8", source)
         self.assertIn("observedRegisterCtorInstances.clear()", source)
-        self.assertIn("recordCtorInstance(args, observedRegisterCtorInstances)",
+        self.assertIn("completedCtorRemember(this.ctorKey, this.ctorEpoch,",
                       source)
         self.assertIn("same_register_ctor_instance_observed: true", source)
         events=[
             ev("firstboot_confirm_gest_second_entered", 10),
             ev("registration_request_constructor_entered", 20),
+            ev("registration_request_constructor_returned", 25),
             {**ev("registration_request_serializer_entered", 30),
              "same_register_ctor_instance_observed": True},
             ev("auth_manager_tail_callee_35cc8_entered", 40),
@@ -568,6 +570,8 @@ class GuestChronologyFixtures(unittest.TestCase):
             ev("firstboot_confirm_gest_second_entered", 10),
             {**ev("auth_manager_tail_callee_35cc8_entered", 20),
              "create_token_ctor_from_tail_callsite_observed": True},
+            {**ev("auth_manager_tail_callee_35cc8_returned", 25),
+             "create_token_ctor_from_tail_callsite_observed": True},
             {**ev("token_request_serializer_entered", 30),
              "same_token_ctor_instance_observed": True,
              "same_token_ctor_from_tail_instance_observed": True},
@@ -577,6 +581,8 @@ class GuestChronologyFixtures(unittest.TestCase):
         report=timeline.observe_guest_register_order(events,crit,tail)
         self.assertTrue(
             report["create_token_ctor_direct_register_tail_caller_observed"])
+        self.assertTrue(
+            report["create_token_ctor_direct_register_tail_caller_completed"])
         self.assertTrue(report[
             "same_token_request_from_register_tail_callsite_observed"])
         self.assertFalse(report["identical_native_callstack_proven"])
@@ -615,6 +621,99 @@ class GuestChronologyFixtures(unittest.TestCase):
         msg["payload"]["event"]="registration_request_serializer_entered"
         self.assertNotIn("same_token_ctor_from_tail_instance_observed",
                          timeline.sanitize_timeline_event(msg))
+
+
+    def test_ctor_entry_without_return_is_not_same_request_proof(self):
+        critical={k: True for k in timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS}
+        tail={k: True for k in timeline.REGISTER_TAIL_HOOK_KEYS}
+        events=[
+            ev("firstboot_confirm_gest_second_entered", 1),
+            ev("registration_request_constructor_entered", 2),
+            {**ev("registration_request_serializer_entered", 3),
+             "same_register_ctor_instance_observed": True},
+            {**ev("auth_manager_tail_callee_35cc8_entered", 4),
+             "create_token_ctor_from_tail_callsite_observed": True},
+            {**ev("token_request_serializer_entered", 5),
+             "same_token_ctor_instance_observed": True,
+             "same_token_ctor_from_tail_instance_observed": True},
+        ]
+        report=timeline.observe_guest_register_order(events,critical,tail)
+        self.assertFalse(report["same_auth_register_request_instance_observed"])
+        self.assertFalse(report["same_create_token_request_instance_observed"])
+        self.assertFalse(report[
+            "same_token_request_from_register_tail_callsite_observed"])
+        self.assertTrue(report[
+            "create_token_ctor_direct_register_tail_caller_observed"])
+        self.assertFalse(report[
+            "create_token_ctor_direct_register_tail_caller_completed"])
+        self.assertFalse(report["server_registration_proven"])
+
+    def test_serializer_before_constructor_return_cannot_retroactively_match(self):
+        critical={k: True for k in timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS}
+        tail={k: True for k in timeline.REGISTER_TAIL_HOOK_KEYS}
+        events=[
+            ev("firstboot_confirm_gest_second_entered", 1),
+            {**ev("registration_request_serializer_entered", 2),
+             "same_register_ctor_instance_observed": True},
+            {**ev("token_request_serializer_entered", 3),
+             "same_token_ctor_instance_observed": True},
+            ev("registration_request_constructor_returned", 4),
+            ev("auth_manager_tail_callee_35cc8_returned", 5),
+        ]
+        report=timeline.observe_guest_register_order(events,critical,tail)
+        self.assertFalse(report["same_auth_register_request_instance_observed"])
+        self.assertFalse(report["same_create_token_request_instance_observed"])
+        self.assertFalse(report["identical_registration_request_proven"])
+
+    def test_next_second_confirmation_is_a_separate_epoch(self):
+        critical={k: True for k in timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS}
+        tail={k: True for k in timeline.REGISTER_TAIL_HOOK_KEYS}
+        events=[
+            ev("firstboot_confirm_gest_second_entered", 1),
+            ev("registration_request_constructor_entered", 2),
+            ev("firstboot_confirm_gest_second_entered", 3),
+            ev("registration_request_constructor_returned", 4),
+            {**ev("registration_request_serializer_entered", 5),
+             "same_register_ctor_instance_observed": True},
+        ]
+        report=timeline.observe_guest_register_order(events,critical,tail)
+        self.assertTrue(
+            report["window_stopped_at_another_second_confirmation"])
+        self.assertFalse(report["same_auth_register_request_instance_observed"])
+        self.assertFalse(report["all_seven_stages_observed_in_order"])
+        self.assertFalse(report["server_registration_proven"])
+
+    def test_constructor_completion_events_are_whitelisted_and_private(self):
+        for event in ("registration_request_constructor_returned",
+                      "auth_manager_tail_callee_35cc8_returned"):
+            msg={"type":"send","payload":{
+                "kind":timeline.KIND,"version":timeline.EXPECTED_VERSION,
+                "event":event,"elapsed_ms":8,
+                "token":"SECRET","pointer":"0xDEAD",
+                "create_token_ctor_from_tail_callsite_observed": True,
+            }}
+            clean=timeline.sanitize_timeline_event(msg)
+            self.assertNotIn("token", clean)
+            self.assertNotIn("pointer", clean)
+            self.assertEqual(clean["event"],event)
+            if event == "auth_manager_tail_callee_35cc8_returned":
+                self.assertIs(
+                    clean["create_token_ctor_from_tail_callsite_observed"],
+                    True)
+            else:
+                self.assertNotIn(
+                    "create_token_ctor_from_tail_callsite_observed",clean)
+
+    def test_bounded_constructor_completion_cache_is_present(self):
+        source=Path(__file__).with_name(
+            "home41_arm64_auth_timeline.js").read_text(encoding="utf-8")
+        self.assertIn("const COMPLETED_CTOR_MAX_AGE_MS = 120000",source)
+        self.assertIn("guestObservationEpoch++",source)
+        self.assertIn("instanceEpoch !== guestObservationEpoch",source)
+        self.assertIn("completedCtorRemember(this.ctorKey, this.ctorEpoch,",
+                      source)
+        self.assertIn("observedTokenCtorInstancesFromTail",source)
+        self.assertIn("elapsed <= COMPLETED_CTOR_MAX_AGE_MS",source)
 
 
 if __name__ == "__main__":
