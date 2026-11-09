@@ -24,10 +24,10 @@ def synthetic_phase4():
     pen=ImageDraw.Draw(img)
     # Approximate the left 3-character and right 2-character grey glyph
     # coverage within the exact original button caption bounding rectangles.
-    pen.rectangle((int(w*.215),int(h*.934),
-                   int(w*.315),int(h*.946)),fill=(150,150,150))
-    pen.rectangle((int(w*.690),int(h*.934),
-                   int(w*.790),int(h*.944)),fill=(150,150,150))
+    pen.rectangle((int(w*.223),int(h*.935),
+                   int(w*.293),int(h*.943)),fill=(150,150,150))
+    pen.rectangle((int(w*.702),int(h*.935),
+                   int(w*.776),int(h*.942)),fill=(150,150,150))
     return img
 
 
