@@ -87,6 +87,16 @@ EXPECTED_NEARBY_CALLBACK_BLR_PC = 0x1D2FA20
 EXPECTED_ADJACENT_PROLOGUE = (0x1D2F9F8, 0xA9BF4FFE)
 EXPECTED_PRECEDING_BRANCH = (0x1D2F9E8, 0x17FFFE04)
 EXPECTED_ADJACENT_RETURN = (0x1D2FA2C, 0xD65F03C0)
+EXPECTED_CONDITIONAL_CALLBACK_INSTRUCTIONS = (
+    (0x1D2F9FC,0x7106401F,"CMP W0, #0x190"),
+    (0x1D2FA00,0x52844FE8,"MOV W8, #0x227F"),
+    (0x1D2FA04,0x7A480020,"CCMP W1, W8, #0, EQ"),
+    (0x1D2FA0C,0x540000C1,"B.NE 0x1D2FA24"),
+    (0x1D2FA10,0xB4000103,"CBZ X3, 0x1D2FA30"),
+    (0x1D2FA14,0xF9400C68,"LDR X8, [X3,#0x18]"),
+    (0x1D2FA18,0xF9402060,"LDR X0, [X3,#0x40]"),
+    (0x1D2FA1C,0xF9401461,"LDR X1, [X3,#0x28]"),
+)
 
 
 
@@ -221,6 +231,17 @@ def verify_verified_guest_branch_chain(so:bytes,segs:list[dict])->dict:
         if actual != expected:
             raise ValueError(f"adjacent function boundary opcode mismatch at 0x{at:X}")
         boundary[name] = {"rva":f"0x{at:X}", "opcode":f"0x{actual:08X}"}
+    verified_callback_guards=[]
+    for addr,expected,mnemonic in EXPECTED_CONDITIONAL_CALLBACK_INSTRUCTIONS:
+        actual=struct.unpack("<I",extract_at_rva(so,segs,addr,4))[0]
+        if actual != expected:
+            raise ValueError(
+                f"adjacent callback parameter/guard mismatch at 0x{addr:X}")
+        verified_callback_guards.append({
+            "rva":f"0x{addr:X}",
+            "opcode":f"0x{actual:08X}",
+            "instruction":mnemonic,
+        })
     indirect_opcode = struct.unpack(
         "<I", extract_at_rva(so,segs,callpc,4))[0]
     if indirect_opcode & 0xFFFFFC1F != 0xD63F0000:
@@ -241,6 +262,12 @@ def verify_verified_guest_branch_chain(so:bytes,segs:list[dict])->dict:
         "adjacent_conditional_callback_blr": {
             "rva":f"0x{callpc:X}",
             "boundary_evidence":boundary,
+            "guard_and_callback_field_loads":verified_callback_guards,
+            "target_pointer_source_static":"*(X3+0x18)",
+            "arg0_source_static":"*(X3+0x40)",
+            "arg1_source_static":"*(X3+0x28)",
+            "guard_conditions_static":"W0==0x190 AND W1==0x227F AND X3!=NULL",
+            "guard_business_meaning_verified":False,
             "atuh_register_user_body_membership_verified":False,
             "original_IL2CPP_method_identity_verified":False,
             "instruction":"BLR",
