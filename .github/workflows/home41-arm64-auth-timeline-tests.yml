@@ -11,6 +11,8 @@ on:
       - 'ci/test_home41_guest_persistent_chain.py'
       - 'ci/home41_private_postguest_screen.py'
       - 'ci/test_home41_private_postguest_screen.py'
+      - 'ci/home41_resolve_indirect_dispatch.py'
+      - 'ci/test_home41_resolve_indirect_dispatch.py'
       - 'ci/home41_arm64_readonly_runner.py'
   workflow_dispatch:
 
@@ -31,10 +33,11 @@ jobs:
         run: |
           set -euo pipefail
           node --check ci/home41_arm64_auth_timeline.js
-          python -m py_compile ci/home41_arm64_auth_timeline.py ci/test_home41_arm64_auth_timeline.py ci/test_home41_guest_persistent_chain.py ci/home41_private_postguest_screen.py ci/test_home41_private_postguest_screen.py
+          python -m py_compile ci/home41_arm64_auth_timeline.py ci/test_home41_arm64_auth_timeline.py ci/test_home41_guest_persistent_chain.py ci/home41_private_postguest_screen.py ci/test_home41_private_postguest_screen.py ci/home41_resolve_indirect_dispatch.py ci/test_home41_resolve_indirect_dispatch.py
           python -m unittest discover -s ci -p 'test_home41_arm64_auth_timeline.py' -v
           python -m unittest discover -s ci -p 'test_home41_guest_persistent_chain.py' -v
           python -m unittest discover -s ci -p 'test_home41_private_postguest_screen.py' -v
+          python -m unittest discover -s ci -p 'test_home41_resolve_indirect_dispatch.py' -v
       - name: Assert no online account registration or production runtime proof
         if: always()
         shell: bash
@@ -42,7 +45,7 @@ jobs:
           {
             echo '## Offline-only HOME 4.1.0 ARM64 auth timeline check'
             echo ''
-            echo '- Tests verify callback event schema, redaction, known static offsets, client-side order and Frida lifecycle mocks.'
+            echo '- Tests verify callback event schema, redaction, BLR X8 normalized-code-RVA tracking, original method index mapping, static offsets, client-side order and Frida lifecycle mocks.'
             echo '- No Android ARM64 device, no actual HTTP request or response, no profile UTID and no accounts.'
             echo '- A native ARM64 Android test device and normal single-account onboarding are still required for live proof.'
           } >> "$GITHUB_STEP_SUMMARY"
