@@ -72,6 +72,23 @@ EVENT_NAMES = frozenset({
     "post_guest_candidate_1098_entered",
     "post_guest_candidate_16f4_entered",
     "auth_manager_register_user_entered",
+    "firstboot_decision_gest_account_entered",
+    "firstboot_denial_gest_account_entered",
+    "firstboot_select_trainer_icon_entered",
+    "firstboot_play_prologue_entered",
+    "firstboot_play_prologue2_entered",
+    "firstboot_add_icon_selector_entered",
+    "firstboot_add_prologue_panel_entered",
+    "firstboot_setup_mt_account_setting_entered",
+    "firstboot_icon_selector_set_data_entered",
+    "firstboot_icon_selector_create_images_entered",
+    "firstboot_icon_selector_on_tap_icon_entered",
+    "firstboot_prologue_panel_set_pokemon_view_entered",
+    "firstboot_prologue_panel_cast_pokemon_select_entered",
+    "firstboot_prologue_pokemon_panel_open_entered",
+    "firstboot_prologue_pokemon_panel_on_tap_pokemon_entered",
+    "firstboot_prologue_pokemon_panel_selected_icon_entered",
+    "firstboot_prologue_panel_on_tap_yes_entered",
     "year_native_item_select_armed",
     "year_native_item_select_returned",
     "year_native_item_select_failed",
@@ -102,6 +119,23 @@ OBSERVER_NAMES = frozenset({
     "firstboot_phase", "firstboot_advertisement_sdk", "firstboot_go_to_phase",
     "guest_second_direct_callee_unclassified", "post_guest_candidate_1098",
     "post_guest_candidate_16f4", "auth_manager_register_user",
+    "decision_gest",
+    "denial_gest",
+    "select_trainer_icon",
+    "play_prologue",
+    "play_prologue2",
+    "add_icon_selector",
+    "add_prologue_panel",
+    "setup_mt_account",
+    "icon_selector_set_data",
+    "icon_selector_create_images",
+    "icon_selector_on_tap",
+    "prologue_set_pokemon_view",
+    "prologue_cast_pokemon_select",
+    "prologue_pokemon_panel_open",
+    "prologue_pokemon_tap",
+    "prologue_pokemon_selected_icon",
+    "prologue_on_tap_yes",
 })
 TIMELINE_FIELDS = frozenset({
     "event", "elapsed_ms", "index", "observer", "reason",
@@ -178,6 +212,55 @@ def sanitize_guest_hook_coverage(snapshot: object) -> dict:
             for key in keys}
 
 
+POST_GUEST_UI_EVENTS = {
+    "firstboot_decision_gest_account_entered": "decision_gest",
+    "firstboot_denial_gest_account_entered": "denial_gest",
+    "firstboot_select_trainer_icon_entered": "select_trainer_icon",
+    "firstboot_play_prologue_entered": "play_prologue",
+    "firstboot_play_prologue2_entered": "play_prologue2",
+    "firstboot_add_icon_selector_entered": "add_icon_selector",
+    "firstboot_add_prologue_panel_entered": "add_prologue_panel",
+    "firstboot_setup_mt_account_setting_entered": "setup_mt_account",
+    "firstboot_icon_selector_set_data_entered": "icon_selector_set_data",
+    "firstboot_icon_selector_create_images_entered": "icon_selector_create_images",
+    "firstboot_icon_selector_on_tap_icon_entered": "icon_selector_on_tap",
+    "firstboot_prologue_panel_set_pokemon_view_entered": "prologue_set_pokemon_view",
+    "firstboot_prologue_panel_cast_pokemon_select_entered": "prologue_cast_pokemon_select",
+    "firstboot_prologue_pokemon_panel_open_entered": "prologue_pokemon_panel_open",
+    "firstboot_prologue_pokemon_panel_on_tap_pokemon_entered": "prologue_pokemon_tap",
+    "firstboot_prologue_pokemon_panel_selected_icon_entered": "prologue_pokemon_selected_icon",
+    "firstboot_prologue_panel_on_tap_yes_entered": "prologue_on_tap_yes",
+}
+
+POST_GUEST_VIEW_STAGES = {
+    "firstboot_select_trainer_icon_entered": "avatar_controller",
+    "firstboot_add_icon_selector_entered": "avatar_construct",
+    "firstboot_icon_selector_set_data_entered": "avatar_view_data",
+    "firstboot_icon_selector_create_images_entered": "avatar_images",
+    "firstboot_icon_selector_on_tap_icon_entered": "avatar_user_tap",
+    "firstboot_play_prologue_entered": "prologue_controller",
+    "firstboot_play_prologue2_entered": "prologue2_controller",
+    "firstboot_add_prologue_panel_entered": "prologue_construct",
+    "firstboot_prologue_panel_set_pokemon_view_entered": "starter_view_data",
+    "firstboot_prologue_panel_cast_pokemon_select_entered": "starter_selection_dialog",
+    "firstboot_prologue_pokemon_panel_open_entered": "starter_panel_open",
+    "firstboot_prologue_pokemon_panel_on_tap_pokemon_entered": "starter_user_tap",
+    "firstboot_prologue_pokemon_panel_selected_icon_entered": "starter_selection",
+    "firstboot_prologue_panel_on_tap_yes_entered": "starter_confirmation_tap",
+    "firstboot_decision_gest_account_entered": "guest_decision",
+    "firstboot_denial_gest_account_entered": "guest_denial",
+    "firstboot_setup_mt_account_setting_entered": "account_setting_setup",
+}
+
+
+def sanitize_post_guest_ui_hook_coverage(snapshot: object) -> dict:
+    """Only fixed-name observer installation statuses; never app state."""
+    obj = snapshot.get("post_guest_ui_hook_coverage") if isinstance(snapshot, dict) else None
+    obj = obj if isinstance(obj, dict) else {}
+    return {label: (obj[label] if type(obj.get(label)) is bool else None)
+            for label in POST_GUEST_UI_EVENTS.values()}
+
+
 def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
     """Produce a conservative sanitized timeline and causality warnings."""
     order = [x.get("event") for x in events]
@@ -210,6 +293,23 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
         "post_guest_candidate_1098_entered",
         "post_guest_candidate_16f4_entered",
         "auth_manager_register_user_entered",
+        "firstboot_decision_gest_account_entered",
+        "firstboot_denial_gest_account_entered",
+        "firstboot_select_trainer_icon_entered",
+        "firstboot_play_prologue_entered",
+        "firstboot_play_prologue2_entered",
+        "firstboot_add_icon_selector_entered",
+        "firstboot_add_prologue_panel_entered",
+        "firstboot_setup_mt_account_setting_entered",
+        "firstboot_icon_selector_set_data_entered",
+        "firstboot_icon_selector_create_images_entered",
+        "firstboot_icon_selector_on_tap_icon_entered",
+        "firstboot_prologue_panel_set_pokemon_view_entered",
+        "firstboot_prologue_panel_cast_pokemon_select_entered",
+        "firstboot_prologue_pokemon_panel_open_entered",
+        "firstboot_prologue_pokemon_panel_on_tap_pokemon_entered",
+        "firstboot_prologue_pokemon_panel_selected_icon_entered",
+        "firstboot_prologue_panel_on_tap_yes_entered",
         "registration_request_serializer_entered",
         "registration_lng_cntry_packed_write_seen",
         "registration_request_formatter_entered",
