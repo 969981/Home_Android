@@ -293,6 +293,107 @@ def sanitize_post_guest_ui_hook_coverage(snapshot: object) -> dict:
             for label in POST_GUEST_UI_EVENTS.values()}
 
 
+GUEST_CHAIN_CRITICAL_HOOK_KEYS = (
+    "confirm_second", "positive_thunk", "negative_thunk",
+    "decision_controller", "denial_controller", "go_to_phase",
+    "register_manager", "register_serializer", "register_response",
+)
+
+
+def sanitize_guest_chain_critical_coverage(snapshot: object) -> dict:
+    """Accept only actual boolean Interceptor.attach results; missing=unknown."""
+    src = (snapshot.get("guest_chain_critical_hook_coverage")
+           if isinstance(snapshot, dict) else None)
+    src = src if isinstance(src, dict) else {}
+    return {
+        key: (src[key] if type(src.get(key)) is bool else None)
+        for key in GUEST_CHAIN_CRITICAL_HOOK_KEYS
+    }
+
+
+GUEST_CHAIN_CHECKPOINTS = (
+    ("firstboot_confirm_gest_second_entered", "second_confirmation"),
+    ("guest_second_decision_thunk_entered", "positive_decision_thunk"),
+    ("firstboot_decision_gest_account_entered", "decision_controller"),
+    ("auth_manager_register_user_entered", "registration_manager"),
+    ("registration_request_serializer_entered", "registration_serializer"),
+    ("registration_response_handler_entered", "registration_response_callback"),
+    ("token_response_handler_entered", "token_callback"),
+    ("login_response_handler_entered", "login_callback"),
+    ("first_basic_utid_observed", "first_basic"),
+)
+
+LIVE_GUEST_CHAIN_EVENTS = frozenset({
+    "arm64_auth_observer_ready", "arm64_auth_observer_partial",
+    "firstboot_confirm_gest_second_entered",
+    "guest_second_decision_thunk_entered",
+    "guest_second_denial_thunk_entered",
+    "firstboot_decision_gest_account_entered",
+    "firstboot_denial_gest_account_entered",
+    "auth_manager_register_user_entered",
+    "registration_request_serializer_entered",
+    "registration_response_handler_entered",
+    "token_response_handler_entered",
+    "login_response_handler_entered",
+    "first_basic_utid_observed",
+    "firstboot_select_trainer_icon_entered",
+    "firstboot_play_prologue_entered",
+    "firstboot_play_prologue2_entered",
+    "firstboot_prologue_pokemon_panel_on_tap_pokemon_entered",
+    "firstboot_go_to_phase_entered",
+})
+
+
+def diagnose_guest_chain(events: list[dict], coverage: dict) -> dict:
+    """Classify bounded after-Second method entries, never server success."""
+    missing = [k for k in GUEST_CHAIN_CRITICAL_HOOK_KEYS
+               if coverage.get(k) is not True]
+    second = next((i for i,x in enumerate(events)
+                   if x.get("event") == "firstboot_confirm_gest_second_entered"), None)
+    following = events[second:] if second is not None else []
+    seen = {x.get("event") for x in following}
+    positive = ("guest_second_decision_thunk_entered" in seen
+                or "firstboot_decision_gest_account_entered" in seen)
+    negative = ("guest_second_denial_thunk_entered" in seen
+                or "firstboot_denial_gest_account_entered" in seen)
+    if second is None:
+        status = "second_confirmation_not_observed"
+    elif positive and negative:
+        status = "mixed_guest_decisions_require_instance_correlation"
+    elif "first_basic_utid_observed" in seen:
+        status = "first_basic_seen_ui_six_digit_id_not_verified"
+    elif "registration_response_handler_entered" in seen:
+        status = "registration_response_callback_seen_result_unknown"
+    elif "registration_request_serializer_entered" in seen:
+        status = "registration_serializer_seen_http_send_not_proven"
+    elif "auth_manager_register_user_entered" in seen:
+        status = "register_manager_seen_serializer_not_observed"
+    elif negative:
+        status = "denial_branch_observed"
+    elif "firstboot_decision_gest_account_entered" in seen:
+        status = "decision_controller_seen_register_manager_not_observed"
+    elif "guest_second_decision_thunk_entered" in seen:
+        status = "positive_thunk_seen_decision_controller_not_observed"
+    elif any(x.get("event") in POST_GUEST_UI_EVENTS or
+             x.get("event") == "firstboot_go_to_phase_entered"
+             for x in following[1:]):
+        status = "ui_method_or_phase_request_without_register_manager"
+    else:
+        status = "second_seen_no_followup_in_observation_window"
+    return {
+        "classification": status,
+        "second_confirmation_seen": second is not None,
+        "observed_checkpoints": [
+            label for event,label in GUEST_CHAIN_CHECKPOINTS if event in seen],
+        "all_critical_hooks_installed": len(missing) == 0,
+        "missing_or_unverified_critical_hooks": missing,
+        "all_events_same_transaction_verified": False,
+        "server_registration_confirmed": False,
+        "ui_six_digit_id_verified": False,
+        "cold_start_account_restored_verified": False,
+    }
+
+
 def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
     """Produce a conservative sanitized timeline and causality warnings."""
     order = [x.get("event") for x in events]
@@ -696,6 +797,7 @@ def run(apk: Path, script_path: Path, serial: str | None,
     script = None
     guest_hook_coverage = sanitize_guest_hook_coverage(None)
     post_guest_ui_coverage = sanitize_post_guest_ui_hook_coverage(None)
+    critical_guest_coverage = sanitize_guest_chain_critical_coverage(None)
 
     def on_message(message, _data):
         nonlocal ready, script_error
@@ -713,9 +815,7 @@ def run(apk: Path, script_path: Path, serial: str | None,
             stop_early.set()
         elif item["event"] == "first_basic_utid_observed":
             got_first_basic.set()
-        if item["event"] in ("arm64_auth_observer_ready",
-                             "registration_lng_cntry_packed_write_seen",
-                             "first_basic_utid_observed"):
+        if item["event"] in LIVE_GUEST_CHAIN_EVENTS:
             print(json.dumps(item, ensure_ascii=False, sort_keys=True), flush=True)
 
     try:
@@ -758,9 +858,11 @@ def run(apk: Path, script_path: Path, serial: str | None,
                 snapshot = script.exports_sync.snapshot()
                 guest_hook_coverage = sanitize_guest_hook_coverage(snapshot)
                 post_guest_ui_coverage = sanitize_post_guest_ui_hook_coverage(snapshot)
+                critical_guest_coverage = sanitize_guest_chain_critical_coverage(snapshot)
             except Exception:
                 guest_hook_coverage = sanitize_guest_hook_coverage(None)
                 post_guest_ui_coverage = sanitize_post_guest_ui_hook_coverage(None)
+                critical_guest_coverage = sanitize_guest_chain_critical_coverage(None)
         # The first UTID may be received while waiting; it is never printed in
         # the public event stream. Explicit local RPC optionally displays it.
         if show_local_values and script is not None and ready:
@@ -786,6 +888,9 @@ def run(apk: Path, script_path: Path, serial: str | None,
     report = analyze_events(events, ready, script_error)
     report["guest_hook_coverage"] = guest_hook_coverage
     report["post_guest_ui_hook_coverage"] = post_guest_ui_coverage
+    report["guest_chain_critical_hook_coverage"] = critical_guest_coverage
+    report["guest_chain_diagnosis"] = diagnose_guest_chain(
+        events, critical_guest_coverage)
     report["execution_context"] = (
         "runtime_emulated_arm64_agent" if realm == "emulated"
         else "runtime_device_direct")
