@@ -14,10 +14,36 @@ from pathlib import Path
 import home41_terms_probe as terms
 
 
+def combine_age_and_phase_reports(age_report: object, phase_report: object) -> dict:
+    """Explicitly combine the TWO separate original CI evidence outputs.
+
+    The phase probe is written only AFTER diag.run saves the age report.
+    Never assume the earlier age report contains post_terms_phase_probe.
+    Reject malformed/forged nested probe data and copy no user payloads.
+    """
+    age = age_report if isinstance(age_report, dict) else {}
+    phase = phase_report if isinstance(phase_report, dict) else {}
+    return {
+        "process_at_end": age.get("process_at_end"),
+        "registration_status": age.get("registration_status"),
+        "account_registration": age.get("account_registration"),
+        "birthday_native_preflight_passed":
+            age.get("birthday_native_preflight_passed"),
+        "birthday_next_tapped": age.get("birthday_next_tapped"),
+        "post_next_screen_changed": age.get("post_next_screen_changed"),
+        "post_terms_phase_probe": phase,
+    }
+
+
 def phase4_capture_allowed(report: object) -> bool:
     if not isinstance(report,dict):
         return False
     if report.get("process_at_end") is not True:
+        return False
+    if not all(report.get(key) is True for key in (
+        "birthday_native_preflight_passed", "birthday_next_tapped",
+        "post_next_screen_changed",
+    )):
         return False
     if report.get("registration_status") not in (None,"not_attempted"):
         return False
@@ -60,7 +86,10 @@ def phase4_capture_allowed(report: object) -> bool:
 
 def main() -> int:
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--report",type=Path,required=True)
+    p.add_argument("--report",type=Path,required=True,
+                   help="Saved age report, home41_emulator_report.json")
+    p.add_argument("--phase-report",type=Path,required=True,
+                   help="Separate home41_post_terms_phase_report.json")
     p.add_argument("--output",type=Path,required=True)
     p.add_argument("--status",type=Path,required=True)
     args=p.parse_args()
@@ -75,7 +104,9 @@ def main() -> int:
         "utid_saved":False,
     }
     try:
-        report=json.loads(args.report.read_text(encoding="utf8"))
+        age=json.loads(args.report.read_text(encoding="utf8"))
+        phase=json.loads(args.phase_report.read_text(encoding="utf8"))
+        report=combine_age_and_phase_reports(age,phase)
     except (OSError,ValueError):
         report={}
     allowed=phase4_capture_allowed(report)
