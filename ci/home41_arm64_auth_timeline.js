@@ -165,6 +165,9 @@ let guestCallbackHookCoverage = {
   second_direct: false, post_1098: false,
   post_16f4: false, register_manager: false
 };
+// Each value is the actual Interceptor.attach outcome, not a guess based
+// on whether the method has been invoked yet.
+let postGuestUiHookCoverage = {};
 function readCurrentFirstBootPhase() {
   if (firstBootBodyPtr === null) return null;
   try {
@@ -431,7 +434,8 @@ rpc.exports = {
         day_setter_failure: localDaySetterFailure
       },
       counts: {...counts},
-      guest_callback_hook_coverage: {...guestCallbackHookCoverage}
+      guest_callback_hook_coverage: {...guestCallbackHookCoverage},
+      post_guest_ui_hook_coverage: {...postGuestUiHookCoverage}
     };
   },
   // Explicit single local-form interaction. Never used by the ordinary
@@ -691,7 +695,8 @@ function install(lib) {
     ['prologue_on_tap_yes', RVA.firstBootProloguePanelOnTapYes,
       'firstboot_prologue_panel_on_tap_yes_entered'],
   ]) {
-    optionalUiObserver(item[0], item[1], item[2]);
+    postGuestUiHookCoverage[item[0]] =
+      optionalUiObserver(item[0], item[1], item[2]);
   }
   // Read-only original FirstBoot phase observation, no workflow changes.
   // Start and original setup callbacks capture the managed instance only
