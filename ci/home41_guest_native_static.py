@@ -23,6 +23,13 @@ WINDOWS={
     "FirstBoot.ConfirmationGestAccount":(0x1DE369C,0x1E0),
     "FirstBoot.ConfirmGestAccountFirst":(0x1DE5140,0x1D8),
     "FirstBoot.ConfirmGestAccountSecond":(0x1DE5318,0x180),
+    # Concrete first-level BL targets verified in the original bytecode.
+    # These labels are evidence-relative, not inferred official symbols.
+    "GuestConfirmation.initial_ui_delegate":(0x1DEAFDC,0x180),
+    "GuestConfirmation.first_ui_delegate":(0x1DEB1E8,0x1B0),
+    "GuestConfirmation.second_ui_delegate":(0x1DEB3C0,0x1F0),
+    "FirstBoot.post_guest_0x1DE1098":(0x1DE1098,0x110),
+    "FirstBoot.post_guest_0x1DE16F4":(0x1DE16F4,0x130),
     "FirstBoot.GoToPhase":(0x1DE1C10,0x160),
     "ApiManagerLogin.AtuhRegisterUser":(0x1D2F8DC,0x200),
     "ApiRequestAuthRegisterUser.SerializeRequestParameter":(0x1D334A4,0x130),
