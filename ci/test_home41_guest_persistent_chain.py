@@ -225,8 +225,8 @@ class GuestChronologyFixtures(unittest.TestCase):
             self.assertEqual(sanitized, {"event": event, "elapsed_ms": 45})
 
     def test_hook_coverage_must_be_bounded_and_missing_unknown(self):
-        expected = {"second_direct", "post_1098",
-                    "post_16f4", "register_manager"}
+        expected = {"second_direct", "decision_thunk", "denial_thunk",
+                    "post_1098", "post_16f4", "register_manager"}
         self.assertEqual(set(timeline.sanitize_guest_hook_coverage(None)),expected)
         self.assertTrue(all(v is None for v in
                             timeline.sanitize_guest_hook_coverage({}).values()))
@@ -237,7 +237,9 @@ class GuestChronologyFixtures(unittest.TestCase):
                 "raw_utid": "123456",
             }})
         self.assertEqual(result, {
-            "second_direct": True, "post_1098": False,
+            "second_direct": True,
+            "decision_thunk": None, "denial_thunk": None,
+            "post_1098": False,
             "post_16f4": None, "register_manager": None,
         })
         self.assertNotIn("123456", str(result))
