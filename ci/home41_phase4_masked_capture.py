@@ -61,6 +61,13 @@ def phase4_capture_allowed(report: object) -> bool:
     phase=probe.get("native_phase")
     if not isinstance(phase,dict):
         return False
+    # Fail closed on missing/untrusted counters: tuple evaluation is eager,
+    # so comparing None > 0 would otherwise raise instead of returning False.
+    sdk_count=phase.get("advertisement_sdk_method_entries")
+    go_count=phase.get("go_to_phase_entries")
+    if (type(sdk_count) is not int or not 0 < sdk_count <= 100000
+            or type(go_count) is not int or not 0 < go_count <= 100000):
+        return False
     return all((
         phase.get("native_arm64") is True,
         phase.get("hooks_ready") is True,
@@ -72,10 +79,8 @@ def phase4_capture_allowed(report: object) -> bool:
         phase.get("last_requested_phase_name")=="ADVERTISEMENT_SDK",
         phase.get("go_to_phase_hook_attached") is True,
         phase.get("advertisement_sdk_hook_attached") is True,
-        type(phase.get("advertisement_sdk_method_entries")) is int,
-        phase.get("advertisement_sdk_method_entries")>0,
-        type(phase.get("go_to_phase_entries")) is int,
-        phase.get("go_to_phase_entries")>0,
+        sdk_count > 0,
+        go_count > 0,
         phase.get("account_registration_attempted") is False,
         phase.get("nintendo_account_linking_attempted") is False,
         phase.get("utid_saved") is False,
@@ -129,7 +134,7 @@ def main() -> int:
     args.status.parent.mkdir(parents=True,exist_ok=True)
     args.status.write_text(json.dumps(state,indent=2,sort_keys=True)+"\n",encoding="utf8")
     print(json.dumps(state,sort_keys=True))
-    return 0 if allowed else 3
+    return 0 if state["masked_screenshot_saved"] else 3
 
 
 if __name__=="__main__":
