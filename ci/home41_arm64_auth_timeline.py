@@ -357,6 +357,75 @@ GUEST_CHAIN_CHECKPOINTS = (
     ("first_basic_utid_observed", "first_basic"),
 )
 
+ORDERED_REGISTER_ENTRY_EVENTS = (
+    ("firstboot_confirm_gest_second_entered", "confirm_second"),
+    ("guest_second_decision_thunk_entered", "positive_thunk"),
+    ("firstboot_decision_gest_account_entered", "decision_controller"),
+    ("auth_manager_register_user_entered", "register_manager"),
+    ("auth_manager_tail_target_entered", "tail_target_1d2f1f8"),
+    ("auth_manager_tail_callee_35cc8_entered", "downstream_1d35cc8"),
+    ("registration_request_serializer_entered", "register_serializer"),
+)
+
+
+def observe_guest_register_order(
+    events: list[dict],
+    critical_coverage: dict,
+    tail_coverage: dict,
+) -> dict:
+    """Compare Frida event delivery order AFTER first Second entry only.
+
+    This is NOT proof of a single call stack/transaction: original app may
+    dispatch async callbacks across threads; order can be delivered late.
+    """
+    start=next((i for i, e in enumerate(events)
+                if e.get("event") == "firstboot_confirm_gest_second_entered"),
+               None)
+    offset = start if start is not None else len(events)
+    first={}
+    for i, entry in enumerate(events[offset:], start=offset):
+        event=entry.get("event")
+        if event in (e for e,_ in ORDERED_REGISTER_ENTRY_EVENTS) and event not in first:
+            first[event] = i
+    stages=[]
+    for name, hook in ORDERED_REGISTER_ENTRY_EVENTS:
+        coverage = (tail_coverage if hook in REGISTER_TAIL_HOOK_KEYS
+                    else critical_coverage)
+        val=coverage.get(hook)
+        stages.append({
+            "stage":name,
+            "native_hook_installed": val if type(val) is bool else None,
+            "first_observed_position_after_second": (
+                first[name] - offset if name in first else None),
+            "observed": name in first,
+        })
+    pairs=[]
+    for a, b in zip(stages, stages[1:]):
+        x=a["first_observed_position_after_second"]
+        y=b["first_observed_position_after_second"]
+        pairs.append({
+            "from":a["stage"], "to":b["stage"],
+            "observed_delivery_order": None if x is None or y is None else x < y,
+        })
+    complete=(start is not None and
+              all(x["observed"] for x in stages) and
+              all(x["observed_delivery_order"] is True for x in pairs))
+    return {
+        "observation_scope":"first_ConfirmGestAccountSecond_and_later_only",
+        "second_confirmation_observed":start is not None,
+        "stages":stages,
+        "adjacent_conditional_callback_not_required":True,
+        "pairwise_delivery_order":pairs,
+        "all_seven_stages_observed_in_order":bool(complete),
+        "all_required_stage_hooks_installed":all(
+            x["native_hook_installed"] is True for x in stages),
+        "identical_native_callstack_proven":False,
+        "identical_registration_request_proven":False,
+        "server_registration_proven":False,
+        "first_basic_or_cold_start_proven":False,
+    }
+
+
 LIVE_GUEST_CHAIN_EVENTS = frozenset({
     "arm64_auth_observer_ready", "arm64_auth_observer_partial",
     "firstboot_confirm_gest_second_entered",
@@ -971,6 +1040,8 @@ def run(apk: Path, script_path: Path, serial: str | None,
     report["post_guest_ui_hook_coverage"] = post_guest_ui_coverage
     report["guest_chain_critical_hook_coverage"] = critical_guest_coverage
     report["registration_tail_observer_hook_coverage"] = register_tail_coverage
+    report["guest_register_entry_order"] = observe_guest_register_order(
+        events, critical_guest_coverage, register_tail_coverage)
     report["registration_tail_same_transaction_verified"] = False
     report["guest_chain_diagnosis"] = diagnose_guest_chain(
         events, critical_guest_coverage)
