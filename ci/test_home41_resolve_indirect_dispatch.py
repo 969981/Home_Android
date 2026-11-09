@@ -31,11 +31,13 @@ class OriginalIndexResolverTests(unittest.TestCase):
         self.assertEqual(b["next_indexed_method_entry"]["rva"],"0x1D34000")
         self.assertFalse(b["non_exact_function_ownership_verified"])
         self.assertFalse(result["server_guest_registration_verified"])
+        self.assertFalse(result[
+            "adjacent_callback_belongs_to_registration_manager_verified"])
 
     def test_redacted_report_only_whitelists_bounded_hex_rvas(self):
         report={
             "guest_chain_diagnosis":{
-                "indirect_dispatch_module_relative_target_rvas":[
+                "nearby_callback_module_relative_target_rvas":[
                     "0x1D334A4","0x1D334A4","0xZZ","0x40000000",
                     "0xDEADBEEF",{"raw_utid":"secret"}, "0x0"
                 ],
