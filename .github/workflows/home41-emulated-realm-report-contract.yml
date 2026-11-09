@@ -1,0 +1,43 @@
+name: HOME 4.1.0 emulated realm report evidence contract
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/home41-emulated-realm-report-contract.yml'
+      - 'ci/home41_emulator_arm64_realm.py'
+      - 'ci/test_home41_emulator_arm64_realm.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  report-classification:
+    name: Offline ARM64 NativeBridge evidence status regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify no premature runtime/registration proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            ci/home41_emulator_arm64_realm.py \
+            ci/test_home41_emulator_arm64_realm.py
+          python -m unittest discover \
+            -s ci -p 'test_home41_emulator_arm64_realm.py' -v
+      - name: Distinguish emulated ARM64 agent from account registration
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## HOME 4.1.0 ARM64 NativeBridge evidence'
+            echo ''
+            echo '- A proven ARM64 emulated-realm Frida snapshot is distinct from a generic x86_64 NativeBridge preflight.'
+            echo '- No account creation, native Android hardware, HTTP response, original UTID, trainer ID or cold-start restoration was verified by this offline workflow.'
+            echo '- This workflow does not launch Android or invoke any HOME account action.'
+          } >> "$GITHUB_STEP_SUMMARY"
