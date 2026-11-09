@@ -68,6 +68,10 @@ EVENT_NAMES = frozenset({
     "firstboot_confirmation_gest_account_entered",
     "firstboot_confirm_gest_first_entered",
     "firstboot_confirm_gest_second_entered",
+    "guest_second_direct_callee_unclassified_entered",
+    "post_guest_candidate_1098_entered",
+    "post_guest_candidate_16f4_entered",
+    "auth_manager_register_user_entered",
     "year_native_item_select_armed",
     "year_native_item_select_returned",
     "year_native_item_select_failed",
@@ -95,7 +99,9 @@ OBSERVER_NAMES = frozenset({
     "login_callback", "common_response", "set_basic",
     "firstboot_clause", "firstboot_terms_setup",
     "firstboot_checkbox", "terms_dialog_open", "terms_dialog_ok",
-    "firstboot_phase", "firstboot_advertisement_sdk", "firstboot_go_to_phase"
+    "firstboot_phase", "firstboot_advertisement_sdk", "firstboot_go_to_phase",
+    "guest_second_direct_callee_unclassified", "post_guest_candidate_1098",
+    "post_guest_candidate_16f4", "auth_manager_register_user",
 })
 TIMELINE_FIELDS = frozenset({
     "event", "elapsed_ms", "index", "observer", "reason",
@@ -188,6 +194,13 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
               else "auth_events_without_basic")
     times = {}
     for event in (
+        "firstboot_confirmation_gest_account_entered",
+        "firstboot_confirm_gest_first_entered",
+        "firstboot_confirm_gest_second_entered",
+        "guest_second_direct_callee_unclassified_entered",
+        "post_guest_candidate_1098_entered",
+        "post_guest_candidate_16f4_entered",
+        "auth_manager_register_user_entered",
         "registration_request_serializer_entered",
         "registration_lng_cntry_packed_write_seen",
         "registration_request_formatter_entered",
@@ -203,6 +216,32 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
         sample = next((x for x in events if x.get("event") == event and
                        "elapsed_ms" in x), None)
         times[event] = sample["elapsed_ms"] if sample else None
+    def chronological_pair(first: str, second: str) -> bool | None:
+        a, b = times[first], times[second]
+        return None if a is None or b is None else a <= b
+
+    # These are time-order observations, NOT proof that a given callback
+    # belongs to the same server transaction or that registration succeeded.
+    pairs = {
+        "second_to_registration_manager": chronological_pair(
+            "firstboot_confirm_gest_second_entered",
+            "auth_manager_register_user_entered"),
+        "manager_to_serializer": chronological_pair(
+            "auth_manager_register_user_entered",
+            "registration_request_serializer_entered"),
+        "serializer_to_registration_response": chronological_pair(
+            "registration_request_serializer_entered",
+            "registration_response_handler_entered"),
+        "registration_response_to_token_response": chronological_pair(
+            "registration_response_handler_entered",
+            "token_response_handler_entered"),
+        "registration_response_to_login_response": chronological_pair(
+            "registration_response_handler_entered",
+            "login_response_handler_entered"),
+        "registration_response_to_first_basic": chronological_pair(
+            "registration_response_handler_entered",
+            "first_basic_utid_observed"),
+    }
     delta = None
     if times["first_basic_utid_observed"] is not None and \
             times["registration_response_handler_entered"] is not None:
@@ -215,6 +254,22 @@ def analyze_events(events: list[dict], ready: bool, error: str | None) -> dict:
         "events_observed": len(events),
         "first_event_ms": times,
         "first_basic_minus_registration_callback_ms": delta,
+        "guest_path": {
+            "first_confirmation_entered":
+                "firstboot_confirm_gest_first_entered" in order,
+            "second_confirmation_entered":
+                "firstboot_confirm_gest_second_entered" in order,
+            "second_direct_callee_unclassified_entered":
+                "guest_second_direct_callee_unclassified_entered" in order,
+            "post_guest_candidate_1098_entered":
+                "post_guest_candidate_1098_entered" in order,
+            "post_guest_candidate_16f4_entered":
+                "post_guest_candidate_16f4_entered" in order,
+            "auth_manager_register_user_entered":
+                "auth_manager_register_user_entered" in order,
+            "chronological_pairs": pairs,
+            "same_server_transaction_verified": False,
+        },
         "auth": {
             "registration_serializer_entered": register_request,
             "register_lng_cntry_packed_write_observed": register_fields,
