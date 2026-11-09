@@ -103,7 +103,9 @@ const RVA = Object.freeze({
   firstBootProloguePanelOnTapYes: 0x1C7E008,
   authManagerRegisterUser: 0x1D2F8DC,
   // Original byte-confirmed tail branch at 0x1D2F9E8 leads here.
-  // 0x1D35CC8 is a BL callee in that tail target, official name UNKNOWN.
+  // 0x1D35CC8 is ApiRequestCreateToken$.ctor in the version-pinned
+  // original IL2CppDumper ScriptMethod index. This is a Token REQUEST
+  // constructor, NOT ApiRequestAuthRegisterUser serialization or a send.
   authManagerTailTarget: 0x1D2F1F8,
   authManagerTailCallee35CC8: 0x1D35CC8,
   // IMPORTANT: original A64 0x1D2F9F8 is a fresh function prologue
@@ -206,6 +208,9 @@ let registerTailObserverHookCoverage = {
   tail_target_1d2f1f8: false,
   downstream_1d35cc8: false
 };
+// Bounded private identities of CreateToken request instances. Only equality
+// bits are emitted; no pointer or ID is included in any report.
+const observedTokenCtorInstances = new Set();
 // All values are set ONLY by a real Interceptor.attach success/failure.
 // These are the coverage gates for interpreting absent guest callbacks.
 let guestChainCriticalHookCoverage = {
@@ -730,10 +735,26 @@ function install(lib) {
     optionalUiObserver('manager_tail_target_1d2f1f8',
                        RVA.authManagerTailTarget,
                        'auth_manager_tail_target_entered');
-  registerTailObserverHookCoverage.downstream_1d35cc8 =
-    optionalUiObserver('manager_tail_callee_1d35cc8',
-                       RVA.authManagerTailCallee35CC8,
-                       'auth_manager_tail_callee_35cc8_entered');
+  // The original ScriptMethod maps this entry to ApiRequestCreateToken$.ctor.
+  // Retain the legacy event name for older reports. Do NOT claim a native
+  // caller/registration transaction just because a constructor was entered.
+  try {
+    Interceptor.attach(ptr(RVA.authManagerTailCallee35CC8), {
+      onEnter(args) {
+        try {
+          if (!args[0].isNull() && observedTokenCtorInstances.size < 64)
+            observedTokenCtorInstances.add(args[0].toString());
+        } catch (_) {}
+        milestone('auth_manager_tail_callee_35cc8_entered');
+      }
+    });
+    registerTailObserverHookCoverage.downstream_1d35cc8 = true;
+  } catch (_) {
+    registerTailObserverHookCoverage.downstream_1d35cc8 = false;
+    emit('optional_hook_attach_failed', {
+      observer: 'manager_tail_callee_1d35cc8'
+    });
+  }
   // This is an ADJACENT conditional callback helper, not a verified
   // body of AtuhRegisterUser: 0x1D2F9E8 branches away, then 0x1D2F9F8
   // has a new STP prologue before 0x1D2FA20 BLR X8.
@@ -920,10 +941,28 @@ function install(lib) {
   guestChainCriticalHookCoverage.register_response =
     hook('register_callback', RVA.registerCallback,
          onEntered('registration_response_handler_entered'));
-  hook('token_serialize', RVA.tokenSerialize,
-       onEntered('token_request_serializer_entered'));
-  hook('token_callback', RVA.tokenCallback,
-       onEntered('token_response_handler_entered'));
+  // Match only the managed CreateToken request object's address INSIDE the
+  // local observer. A matched bit proves the two entrances used the same
+  // instance, not that HTTP was sent or that registration succeeded.
+  function tokenRequestEntry(eventName, args) {
+    let matched = false;
+    try {
+      matched = !args[0].isNull() &&
+        observedTokenCtorInstances.has(args[0].toString());
+    } catch (_) {}
+    milestone(eventName, matched ?
+      {same_token_ctor_instance_observed: true} : {});
+  }
+  hook('token_serialize', RVA.tokenSerialize, {
+    onEnter(args) {
+      tokenRequestEntry('token_request_serializer_entered', args);
+    }
+  });
+  hook('token_callback', RVA.tokenCallback, {
+    onEnter(args) {
+      tokenRequestEntry('token_response_handler_entered', args);
+    }
+  });
   hook('login_serialize', RVA.loginSerialize,
        onEntered('login_request_serializer_entered'));
   hook('login_callback', RVA.loginCallback,
