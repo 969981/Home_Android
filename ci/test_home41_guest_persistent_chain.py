@@ -104,6 +104,28 @@ class GuestChronologyFixtures(unittest.TestCase):
         for name in timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS:
             self.assertIn(name + ":",js)
 
+    def test_manager_dispatch_site_further_narrows_missing_serializer(self):
+        full = {name:True for name in
+                timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS}
+        started = [
+            ev("firstboot_confirm_gest_second_entered",10),
+            ev("guest_second_decision_thunk_entered",20),
+            ev("firstboot_decision_gest_account_entered",22),
+            ev("auth_manager_register_user_entered",25),
+        ]
+        manager_only = timeline.diagnose_guest_chain(started,full)
+        self.assertEqual(manager_only["classification"],
+                         "register_manager_seen_dispatch_not_observed")
+        dispatch = timeline.diagnose_guest_chain(
+            started + [ev("auth_manager_indirect_dispatch_site_entered",27)],
+            full)
+        self.assertEqual(dispatch["classification"],
+                         "manager_indirect_dispatch_reached_serializer_not_observed")
+        self.assertIn("registration_manager_indirect_dispatch",
+                      dispatch["observed_checkpoints"])
+        self.assertFalse(dispatch["server_registration_confirmed"])
+        self.assertFalse(dispatch["ui_six_digit_id_verified"])
+
     def test_normal_chronology_is_observed_not_proven_server_success(self):
         events = [
             ev("arm64_auth_observer_ready", 1),
@@ -114,6 +136,7 @@ class GuestChronologyFixtures(unittest.TestCase):
             ev("guest_second_decision_thunk_entered", 32),
             ev("firstboot_decision_gest_account_entered", 40),
             ev("auth_manager_register_user_entered", 100),
+            ev("auth_manager_indirect_dispatch_site_entered", 105),
             ev("registration_request_serializer_entered", 110),
             ev("registration_response_handler_entered", 300),
             ev("token_response_handler_entered", 410),
