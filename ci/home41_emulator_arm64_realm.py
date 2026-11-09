@@ -774,6 +774,87 @@ def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
                             "screen_clicked": False,
                             "account_registration_attempted": False,
                         }
+        if getattr(args, "confirm_phase4_optout_modal_once", False):
+            # Separate native Phase 4 gate: only the photographed original
+            # confirmation popup may receive its orange "下一步" once.
+            result["phase4_modal_probe"] = {
+                "status": "previous_decline_modal_not_verified",
+                "original_optout_modal_next_tapped": False,
+                "post_modal_screen_changed": False,
+            }
+            if not result.get("post_decline_capture", {}).get(
+                    "masked_screenshot_saved", False):
+                return result
+            phase_path.write_text(
+                json.dumps(result, ensure_ascii=False,
+                           indent=2, sort_keys=True) + "\n",
+                encoding="utf-8")
+            cmd = [
+                sys.executable,
+                str(Path(__file__).with_name(
+                    "home41_phase4_decline_modal_next_once.py")),
+                "--confirm-previous-optout-once",
+                "--age-report", str(report_path),
+                "--phase-report", str(phase_path),
+                "--output-dir", str(phase4_dir),
+            ]
+            try:
+                done = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=90, check=False)
+                result["phase4_modal_helper_exit_code"] = done.returncode
+                p = phase4_dir / "phase4_modal_status.json"
+                if p.is_file():
+                    m = json.loads(p.read_text(encoding="utf-8"))
+                    result["phase4_modal_probe"] = {
+                        "status": m.get("status"),
+                        "original_optout_modal_next_tapped":
+                            m.get("original_optout_modal_next_tapped") is True,
+                        "post_modal_screen_changed":
+                            m.get("post_modal_screen_changed") is True,
+                        "opt_in_clicked": False,
+                        "account_registration_clicked": False,
+                        "nintendo_link_clicked": False,
+                    }
+            except subprocess.TimeoutExpired:
+                result["phase4_modal_probe"]["status"] = "modal_helper_timeout"
+            if result["phase4_modal_probe"]["original_optout_modal_next_tapped"]:
+                time.sleep(2)
+                next_snap = sanitized_arm64_snapshot(
+                    observer.arm64_agent.exports_sync.snapshot())
+                next_ui = next_snap.get("firstboot_ui", {})
+                next_counts = next_snap.get("counts", {})
+                next_index = next_ui.get("original_phase_enum_index")
+                requested = next_ui.get("last_requested_phase_enum_index")
+                go = next_counts.get("firstboot_go_to_phase_entered")
+                prev = result.get("post_phase4_native", {}).get(
+                    "go_to_phase_entries_after")
+                proved = bool(
+                    next_snap.get("native_arm64") is True
+                    and next_snap.get("hooks_ready") is True
+                    and next_ui.get("original_phase_mapping_verified") is True
+                    and type(next_index) is int and next_index == 5
+                    and type(requested) is int and requested == 5
+                    and type(go) is int
+                    and type(prev) is int and go > prev
+                )
+                result["post_modal_native"] = {
+                    "status": "phase_5_warning_confirmed" if proved
+                              else "phase5_after_modal_not_confirmed",
+                    "native_arm64": next_snap.get("native_arm64") is True,
+                    "current_phase_index": (
+                        next_index if type(next_index) is int else None),
+                    "current_phase_name": next_ui.get("original_phase_name"),
+                    "last_requested_phase_index": (
+                        requested if type(requested) is int else None),
+                    "last_requested_phase_name":
+                        next_ui.get("last_requested_phase_name"),
+                    "go_to_phase_entries_before": prev,
+                    "go_to_phase_entries_after":
+                        go if type(go) is int else None,
+                    "account_registration_attempted": False,
+                    "nintendo_account_linking_attempted": False,
+                    "utid_saved": False,
+                }
         return result
     except Exception as exc:
         result["status"] = "post_terms_phase_probe_exception"
@@ -808,6 +889,10 @@ def main() -> int:
                         help="Opt-out of optional telemetry on verified original Phase 4, then read only Phase 5")
     parser.add_argument("--authorize-phase4-decline-once", action="store_true",
                         help="One-shot opt out via original LEFT different-from-agree button")
+    parser.add_argument("--confirm-phase4-optout-modal-once", action="store_true",
+                        help="On verified original Phase4 opt-out dialog, tap orange Next once")
+    parser.add_argument("--authorize-phase4-modal-next-once", action="store_true",
+                        help="Explicit one-shot authorization for original optional-data opt-out confirmation")
     parser.add_argument("--advance-birthday-once", action="store_true",
                         help="Opt in: after native/UI full-date verification, tap only age form Next once; no Terms consent")
     parser.add_argument("--probe-native-full-date-select", action="store_true",
@@ -849,6 +934,12 @@ def main() -> int:
                 args.probe_terms_next_phase_once and
                 args.authorize_terms_next_phase_once):
             print('{"status":"phase4_decline_requires_separate_explicit_one_shot_optin"}')
+            return 2
+    if args.confirm_phase4_optout_modal_once:
+        if not (args.authorize_phase4_modal_next_once and
+                args.probe_phase4_decline_once and
+                args.authorize_phase4_decline_once):
+            print('{"status":"phase4_modal_next_requires_verified_optout_one_shot"}')
             return 2
     observer = ARM64RealmStageMonitor(
         args.server, args.network_script, args.arm64_script,
@@ -956,6 +1047,15 @@ def main() -> int:
             and phase.get("native_arm64") is True
             and phase.get("hooks_ready") is True
         )
+        if args.confirm_phase4_optout_modal_once:
+            modal = (phase_probe_result or {}).get("phase4_modal_probe", {})
+            post = (phase_probe_result or {}).get("post_modal_native", {})
+            return 0 if (
+                base_ok and probe_ok
+                and modal.get("original_optout_modal_next_tapped") is True
+                and modal.get("post_modal_screen_changed") is True
+                and post.get("status") == "phase_5_warning_confirmed"
+            ) else 3
         if args.probe_phase4_decline_once:
             nxt = (phase_probe_result or {}).get("phase4_decline_probe", {})
             post = (phase_probe_result or {}).get("post_phase4_native", {})
