@@ -76,6 +76,9 @@ EXPECTED_GUEST_START_THUNK = (
     0x528000E8, 0x7200003F, 0x528001C9, 0x1A881121, 0x17FFEDD0
 )
 EXPECTED_GUEST_DECISION_STORE = (0x1DE55F4, 0x3904E668)
+# Raw byte audit artifact #42570544265 identified a BLR at this
+# location.  An indirect BLR register is NOT the target method identity.
+EXPECTED_MANAGER_DISPATCH_BLR_PC = 0x1D2FA20
 
 
 
@@ -199,6 +202,14 @@ def verify_verified_guest_branch_chain(so:bytes,segs:list[dict])->dict:
         "<I",extract_at_rva(so,segs,pc,4))[0]
     if actual_store != expected_store:
         raise ValueError("_isDecisionGest original store opcode mismatch")
+    callpc = EXPECTED_MANAGER_DISPATCH_BLR_PC
+    indirect_opcode = struct.unpack(
+        "<I", extract_at_rva(so,segs,callpc,4))[0]
+    if indirect_opcode & 0xFFFFFC1F != 0xD63F0000:
+        raise ValueError(
+            f"register-manager indirect callsite missing BLR at 0x{callpc:X}"
+        )
+    reg_index = (indirect_opcode >> 5) & 0x1F
     return {
         "status":"exact_SHA_locked_original_A64_branches_verified",
         "verified_edge_count":len(edges),
@@ -208,6 +219,14 @@ def verify_verified_guest_branch_chain(so:bytes,segs:list[dict])->dict:
             "argument":"isGestStart bool from W1, exact 5-instruction window",
             "if_true":"GoToPhase(14) MT_LOGIN",
             "if_false":"GoToPhase(7) NA_LINK_CONTINUE",
+        },
+        "manager_indirect_dispatch_site": {
+            "rva":f"0x{callpc:X}",
+            "instruction":"BLR",
+            "opcode":f"0x{indirect_opcode:08X}",
+            "branch_register":f"X{reg_index}",
+            "callee_identity_verified":False,
+            "http_request_send_verified":False,
         },
         "guest_decision_store": {
             "rva":f"0x{pc:X}",
