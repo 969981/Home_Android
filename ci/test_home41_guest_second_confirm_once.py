@@ -22,8 +22,8 @@ def original_modal_synthetic():
     pen.rectangle((int(w*.55),int(h*.69),
                    int(w*.90),int(h*.735)),fill=(255,173,4))
     # The real right label is white and left label gray; require both.
-    pen.rectangle((int(w*.665),int(h*.698),
-                   int(w*.795),int(h*.712)),fill=(250,254,255))
+    pen.rectangle((int(w*.65),int(h*.700),
+                   int(w*.815),int(h*.716)),fill=(250,254,255))
     pen.rectangle((int(w*.215),int(h*.698),
                    int(w*.279),int(h*.713)),fill=(167,168,167))
     landmarks=(
@@ -68,8 +68,8 @@ class ExactFinalGuestConfirmationTests(unittest.TestCase):
                 w,h=frame.size
                 rect=((int(w*.215),int(h*.698),
                        int(w*.279),int(h*.713)) if left else
-                      (int(w*.665),int(h*.698),
-                       int(w*.795),int(h*.712)))
+                      (int(w*.65),int(h*.700),
+                       int(w*.815),int(h*.716)))
                 d.rectangle(rect,fill=(247,251,247) if left
                             else (255,173,4))
                 self.assertIsNone(final_guest_start_point(png(frame)))
