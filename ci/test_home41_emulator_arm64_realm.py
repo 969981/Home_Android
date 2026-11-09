@@ -95,6 +95,27 @@ class ARM64RealmContractTests(unittest.TestCase):
         self.assertFalse(mod.classify_arm64_emulated_runtime(
             None)["frida_arm64_hooks_installed_verified"])
 
+    def test_byte_verified_register_tail_hooks_are_separately_redacted(self):
+        data=mod.sanitized_arm64_snapshot({
+            "registration_tail_observer_hook_coverage":{
+                "tail_target_1d2f1f8":True,
+                "downstream_1d35cc8":False,
+                "token":"PRIVATE",
+            },
+            "counts":{
+                "auth_manager_tail_target_entered":1,
+                "auth_manager_tail_callee_35cc8_entered":0,
+                "uuid":"PRIVATE",
+            },
+        })
+        self.assertEqual(data["registration_tail_observer_hook_coverage"],{
+            "tail_target_1d2f1f8":True,
+            "downstream_1d35cc8":False,
+        })
+        self.assertEqual(data["counts"]["auth_manager_tail_target_entered"],1)
+        self.assertEqual(data["counts"]["auth_manager_tail_callee_35cc8_entered"],0)
+        self.assertNotIn("PRIVATE",repr(data))
+
     def test_adjacent_callback_is_not_registered_as_required_auth_checkpoint(self):
         snapshot=mod.sanitized_arm64_snapshot({
             "native_arm64":True, "hooks_ready":True,
