@@ -654,6 +654,96 @@ def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
             "current_phase_name": pre_ui.get("original_phase_name"),
         }
         result["observer_stayed_attached_through_terms"] = True
+        if getattr(args, "probe_phase4_agree_once", False):
+            # Separate user-authorized route, starting a NEW disposable AVD.
+            # Do NOT run the previous "不同意" flow on this session.
+            result["phase4_agree_probe"] = {
+                "status": "original_phase4_agree_preflight_rejected",
+                "optional_data_collection_agree_tapped": False,
+                "post_agree_screen_changed": False,
+            }
+            if phase.get("status") != "phase_4_advertisement_sdk_confirmed":
+                return result
+            phase_path = out / "home41_phase4_preagree_native.json"
+            phase_path.write_text(
+                json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8")
+            agree_dir = out / "home41_phase4_agree"
+            command = [
+                sys.executable,
+                str(Path(__file__).with_name("home41_phase4_agree_once.py")),
+                "--authorize-optional-collection-agree-once",
+                "--age-report", str(report_path),
+                "--phase-report", str(phase_path),
+                "--output-dir", str(agree_dir),
+            ]
+            try:
+                completed = subprocess.run(
+                    command, capture_output=True, text=True,
+                    timeout=100, check=False)
+                result["phase4_agree_helper_exit_code"] = completed.returncode
+                status_path = agree_dir / "phase4_agree_status.json"
+                if status_path.is_file():
+                    info = json.loads(status_path.read_text(encoding="utf-8"))
+                    result["phase4_agree_probe"] = {
+                        "status": info.get("status"),
+                        "optional_data_collection_agree_tapped":
+                            info.get("optional_data_collection_agree_tapped") is True,
+                        "post_agree_screen_changed":
+                            info.get("post_agree_screen_changed") is True,
+                        "disagree_button_tapped": False,
+                        "account_registration_attempted": False,
+                        "nintendo_account_linking_attempted": False,
+                        "utid_saved": False,
+                    }
+            except subprocess.TimeoutExpired:
+                result["phase4_agree_probe"]["status"] = "agree_helper_timeout"
+            if result["phase4_agree_probe"]["optional_data_collection_agree_tapped"]:
+                time.sleep(2)
+                current = sanitized_arm64_snapshot(
+                    observer.arm64_agent.exports_sync.snapshot())
+                ui = current.get("firstboot_ui", {})
+                counts = current.get("counts", {})
+                phase_index = ui.get("original_phase_enum_index")
+                requested = ui.get("last_requested_phase_enum_index")
+                before_go = phase.get("go_to_phase_entries")
+                after_go = counts.get("firstboot_go_to_phase_entered")
+                changed = bool(
+                    current.get("native_arm64") is True
+                    and current.get("hooks_ready") is True
+                    and ui.get("original_phase_mapping_verified") is True
+                    and type(phase_index) is int
+                    and type(requested) is int
+                    and phase_index == requested
+                    and phase_index != 4
+                    and type(before_go) is int
+                    and type(after_go) is int
+                    and after_go > before_go
+                )
+                result["post_phase4_agree_native"] = {
+                    "status": (
+                        "phase_5_warning_confirmed"
+                        if changed and phase_index == 5
+                        else "other_native_phase_after_agree_confirmed"
+                        if changed
+                        else "native_phase_after_agree_not_confirmed"),
+                    "native_arm64": current.get("native_arm64") is True,
+                    "hooks_ready": current.get("hooks_ready") is True,
+                    "current_phase_index":
+                        phase_index if type(phase_index) is int else None,
+                    "current_phase_name": ui.get("original_phase_name"),
+                    "last_requested_phase_index":
+                        requested if type(requested) is int else None,
+                    "last_requested_phase_name":
+                        ui.get("last_requested_phase_name"),
+                    "go_to_phase_entries_before": before_go,
+                    "go_to_phase_entries_after":
+                        after_go if type(after_go) is int else None,
+                    "account_registration_attempted": False,
+                    "nintendo_account_linking_attempted": False,
+                    "utid_saved": False,
+                }
+            return result
         if getattr(args, "probe_phase4_decline_once", False):
             # The only permitted UI action on the new Phase 4 screen is the
             # official privacy-preserving LEFT "不同意" button. The original
@@ -885,6 +975,10 @@ def main() -> int:
                         help="One disposable-AVD Terms confirmation followed by read-only native phase snapshot; never register")
     parser.add_argument("--authorize-terms-next-phase-once", action="store_true",
                         help="Explicit one-run authorization for original Terms UI on this disposable AVD")
+    parser.add_argument("--probe-phase4-agree-once", action="store_true",
+                        help="One user-authorized original Phase4 optional-data collection Agree")
+    parser.add_argument("--authorize-phase4-agree-once", action="store_true",
+                        help="Explicit one-shot authorization for right-hand Agree on verified Phase4")
     parser.add_argument("--probe-phase4-decline-once", action="store_true",
                         help="Opt-out of optional telemetry on verified original Phase 4, then read only Phase 5")
     parser.add_argument("--authorize-phase4-decline-once", action="store_true",
@@ -940,6 +1034,16 @@ def main() -> int:
                 args.probe_phase4_decline_once and
                 args.authorize_phase4_decline_once):
             print('{"status":"phase4_modal_next_requires_verified_optout_one_shot"}')
+            return 2
+    if args.probe_phase4_agree_once:
+        if not all((
+            args.authorize_phase4_agree_once,
+            args.probe_terms_next_phase_once,
+            args.authorize_terms_next_phase_once,
+            not args.probe_phase4_decline_once,
+            not args.confirm_phase4_optout_modal_once,
+        )):
+            print('{"status":"phase4_agree_requires_exclusive_explicit_optin"}')
             return 2
     observer = ARM64RealmStageMonitor(
         args.server, args.network_script, args.arm64_script,
@@ -1047,6 +1151,17 @@ def main() -> int:
             and phase.get("native_arm64") is True
             and phase.get("hooks_ready") is True
         )
+        if args.probe_phase4_agree_once:
+            agree = (phase_probe_result or {}).get("phase4_agree_probe", {})
+            after = (phase_probe_result or {}).get("post_phase4_agree_native", {})
+            return 0 if (
+                base_ok and probe_ok
+                and agree.get("optional_data_collection_agree_tapped") is True
+                and agree.get("post_agree_screen_changed") is True
+                and after.get("status") in (
+                    "phase_5_warning_confirmed",
+                    "other_native_phase_after_agree_confirmed")
+            ) else 3
         if args.confirm_phase4_optout_modal_once:
             modal = (phase_probe_result or {}).get("phase4_modal_probe", {})
             post = (phase_probe_result or {}).get("post_modal_native", {})
