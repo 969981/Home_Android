@@ -796,6 +796,90 @@ def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
                             "status": "phase7_masked_capture_timeout",
                             "masked_image_saved": False,
                         }
+                if getattr(args, "probe_nintendo_no_link_once", False):
+                    # Irreversible choice explicitly approved by user.
+                    # Only the original photographed lower "不关联" control;
+                    # do not touch any subsequent unknown screens.
+                    result["nintendo_no_link_probe"] = {
+                        "status": "original_choice_not_eligible",
+                        "original_no_link_button_tapped": False,
+                        "post_click_screen_changed": False,
+                    }
+                    capture = result.get("phase7_screen_capture", {})
+                    if not (capture.get("masked_image_saved") is True
+                            and capture.get("phase7_requested") is True):
+                        return result
+                    phase_path.write_text(
+                        json.dumps(result, ensure_ascii=False,
+                                   indent=2, sort_keys=True) + "\n",
+                        encoding="utf-8")
+                    no_link_dir = out / "home41_nintendo_no_link"
+                    cmd = [
+                        sys.executable,
+                        str(Path(__file__).with_name(
+                            "home41_nintendo_no_link_once.py")),
+                        "--authorize-irreversible-no-link-once",
+                        "--age-report", str(report_path),
+                        "--phase-report", str(phase_path),
+                        "--output-dir", str(no_link_dir),
+                    ]
+                    try:
+                        completed = subprocess.run(
+                            cmd, capture_output=True, text=True,
+                            timeout=90, check=False)
+                        result["nintendo_no_link_helper_exit_code"] = completed.returncode
+                        status_file = no_link_dir / "no_link_once_status.json"
+                        if status_file.is_file():
+                            data = json.loads(status_file.read_text(encoding="utf-8"))
+                            result["nintendo_no_link_probe"] = {
+                                "status": data.get("status"),
+                                "original_no_link_button_tapped":
+                                    data.get("original_no_link_button_tapped") is True,
+                                "post_click_screen_changed":
+                                    data.get("post_click_screen_changed") is True,
+                                "nintendo_link_button_tapped": False,
+                                "further_confirmation_tapped": False,
+                                "registration_button_tapped": False,
+                                "utid_saved": False,
+                            }
+                    except subprocess.TimeoutExpired:
+                        result["nintendo_no_link_probe"]["status"] = (
+                            "no_link_helper_timeout")
+                    if result["nintendo_no_link_probe"][
+                            "original_no_link_button_tapped"]:
+                        time.sleep(2)
+                        snap = sanitized_arm64_snapshot(
+                            observer.arm64_agent.exports_sync.snapshot())
+                        ui = snap.get("firstboot_ui", {})
+                        counts = snap.get("counts", {})
+                        index = ui.get("original_phase_enum_index")
+                        requested = ui.get("last_requested_phase_enum_index")
+                        go = counts.get("firstboot_go_to_phase_entered")
+                        old_go = result.get(
+                            "post_phase4_agree_native", {}).get(
+                                "go_to_phase_entries_after")
+                        result["post_no_link_native"] = {
+                            "status": (
+                                "original_phase_requested_after_no_link"
+                                if type(go) is int and type(old_go) is int
+                                   and go > old_go
+                                else "no_native_phase_request_after_no_link_yet"),
+                            "native_arm64": snap.get("native_arm64") is True,
+                            "hooks_ready": snap.get("hooks_ready") is True,
+                            "current_phase_index":
+                                index if type(index) is int else None,
+                            "current_phase_name": ui.get("original_phase_name"),
+                            "last_requested_phase_index":
+                                requested if type(requested) is int else None,
+                            "last_requested_phase_name":
+                                ui.get("last_requested_phase_name"),
+                            "go_to_phase_entries_before": old_go,
+                            "go_to_phase_entries_after":
+                                go if type(go) is int else None,
+                            "nintendo_link_button_tapped": False,
+                            "registration_button_tapped": False,
+                            "utid_saved": False,
+                        }
             return result
         if getattr(args, "probe_phase4_decline_once", False):
             # The only permitted UI action on the new Phase 4 screen is the
@@ -1028,6 +1112,11 @@ def main() -> int:
                         help="One disposable-AVD Terms confirmation followed by read-only native phase snapshot; never register")
     parser.add_argument("--authorize-terms-next-phase-once", action="store_true",
                         help="Explicit one-run authorization for original Terms UI on this disposable AVD")
+    parser.add_argument("--probe-nintendo-no-link-once", action="store_true",
+                        help="Explicit one-shot original HOME 不关联, stops at next unknown UI")
+    parser.add_argument("--authorize-irreversible-nintendo-no-link-once",
+                        action="store_true",
+                        help="Confirm permanent inability to link this HOME account later")
     parser.add_argument("--capture-phase7-requested-screen", action="store_true",
                         help="Evidence-only masked screenshot after verified Phase7 request and opt-in")
     parser.add_argument("--probe-phase4-agree-once", action="store_true",
@@ -1103,6 +1192,20 @@ def main() -> int:
     if args.capture_phase7_requested_screen and not args.probe_phase4_agree_once:
         print('{"status":"phase7_capture_requires_verified_original_phase4_agree"}')
         return 2
+    if args.probe_nintendo_no_link_once:
+        if not all((
+            args.authorize_irreversible_nintendo_no_link_once,
+            args.capture_phase7_requested_screen,
+            args.probe_phase4_agree_once,
+            args.authorize_phase4_agree_once,
+            args.probe_terms_next_phase_once,
+            args.authorize_terms_next_phase_once,
+            not args.probe_phase4_decline_once,
+            not args.confirm_phase4_optout_modal_once,
+            not args.assisted_single_signup,
+        )):
+            print('{"status":"no_link_requires_explicit_approved_irreversible_one_shot"}')
+            return 2
     observer = ARM64RealmStageMonitor(
         args.server, args.network_script, args.arm64_script,
         select_year_1999=args.select_local_year_1999,
@@ -1227,6 +1330,15 @@ def main() -> int:
                     transition_ok
                     and screen.get("phase7_requested") is True
                     and screen.get("masked_image_saved") is True)
+            if args.probe_nintendo_no_link_once:
+                choice = (phase_probe_result or {}).get(
+                    "nintendo_no_link_probe", {})
+                transition_ok = (
+                    transition_ok
+                    and choice.get("original_no_link_button_tapped") is True
+                    and choice.get("post_click_screen_changed") is True
+                    and choice.get("nintendo_link_button_tapped") is False
+                    and choice.get("further_confirmation_tapped") is False)
             return 0 if transition_ok else 3
         if args.confirm_phase4_optout_modal_once:
             modal = (phase_probe_result or {}).get("phase4_modal_probe", {})
