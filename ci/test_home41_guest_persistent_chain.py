@@ -44,6 +44,27 @@ class GuestChronologyFixtures(unittest.TestCase):
         self.assertFalse(result["http_request_transmitted_verified"])
         self.assertFalse(result["six_digit_id_equals_starter_ot_verified"])
 
+    def test_original_phase_requests_only_after_second_are_not_render_proof(self):
+        events=[
+            {**ev("firstboot_go_to_phase_entered",10),"phase_index":23},
+            ev("firstboot_confirm_gest_first_entered",20),
+            ev("firstboot_confirm_gest_second_entered",30),
+            {**ev("firstboot_go_to_phase_entered",40),"phase_index":15},
+            {**ev("firstboot_go_to_phase_entered",50),"phase_index":21},
+            {**ev("firstboot_go_to_phase_entered",60),"phase_index":24},
+        ]
+        guest=timeline.analyze_events(events,True,None)["guest_path"]
+        self.assertEqual([x["enum_name"] for x in
+                          guest["post_second_phase_requests"]],
+                         ["MT_SELECT_ICON","PROLOGUE","ALL_END"])
+        self.assertTrue(guest["second_callback_observed_before_phase_tracking"])
+        self.assertFalse(guest["phase_is_actual_rendered_ui_verified"])
+        self.assertTrue(all(x["request_only_not_confirmed_render"]
+                            for x in guest["post_second_phase_requests"]))
+        events.pop(2)
+        guest=timeline.analyze_events(events,True,None)["guest_path"]
+        self.assertEqual(guest["post_second_phase_requests"],[])
+
     def test_guest_second_without_registration_is_not_creation(self):
         result = timeline.analyze_events([
             ev("arm64_auth_observer_ready", 1),
