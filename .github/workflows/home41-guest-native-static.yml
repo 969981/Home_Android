@@ -54,7 +54,7 @@ jobs:
             echo '- Eight static BL/B targets, guest-start callback and guest-decision field store are asserted.'
             echo '- Original A64 prologue at 0x1D2F9F8 and prior unconditional tail exit isolate a neighboring callback BLR X8 at 0x1D2FA20.'
             echo '- This adjacent callback is NOT a proven call inside AtuhRegisterUser; its runtime target is unknown.'
-            echo '- AtuhRegisterUser actually tail-branches to 0x1D2F1F8; its next 0x140 bytes are independently disassembled with unknown official name.'
+            echo '- AtuhRegisterUser tail-branches to 0x1D2F1F8; its next bounded 0x330 bytes are independently disassembled, with unknown official name/function extent.'
             echo '- DecisionGestAccount tail B to AtuhRegisterUser is not a proven runtime registration.'
             echo '- This workflow performs NO HOME UI actions, backend registration, ID or Token observation.'
             echo '- Original avatar, prologue and starter method entry hooks remain awaiting device runtime validation.'
