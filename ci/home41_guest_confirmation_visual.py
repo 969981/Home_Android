@@ -12,6 +12,7 @@ linkage, session export, UTID extraction or API calls.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 from pathlib import Path
 
@@ -64,12 +65,40 @@ def guest_visual_allowed(age: object, phase: object) -> bool:
     ))
 
 
+def save_guest_buttons_detail(path: Path, data: bytes) -> bool:
+    """Only render game canvas lower controls (92.5-99%), never nav/footer.
+
+    This is intentionally scoped to a live pre-registration GEST stage with
+    original registration counters at zero. No screenshot of account content
+    is allowed by the caller's gate.
+    """
+    if not data.startswith(terms.PNG_MAGIC):
+        return False
+    try:
+        from PIL import Image, ImageDraw
+        with Image.open(io.BytesIO(data)) as raw:
+            frame = raw.convert("RGB")
+        w, h = frame.size
+        if (w, h) != (1080, 2340):
+            return False
+        # The old generic .97 bottom mask hid the confirmation button labels.
+        # Include only the fixed game-button strip, not the Android navbar.
+        detail = frame.crop((0, int(h * .925), w, int(h * .990)))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        detail.save(path, format="PNG", optimize=True)
+        return True
+    except (ValueError, OSError, ImportError):
+        return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--age-report", required=True, type=Path)
     parser.add_argument("--phase-report", required=True, type=Path)
     parser.add_argument("--image-out", required=True, type=Path)
     parser.add_argument("--status-out", required=True, type=Path)
+    parser.add_argument("--buttons-out", type=Path,
+                        help="Separate original guest-choice button strip (no system navbar)")
     args = parser.parse_args()
 
     status = {
@@ -77,6 +106,7 @@ def main() -> int:
         "original_gest_confirmation_request_proven": False,
         "guest_confirmation_screen_identified": False,
         "masked_screenshot_saved": False,
+        "guest_buttons_detail_saved": False,
         "next_screen_clicked": False,
         "nintendo_account_linked": False,
         "guest_registration_attempted": False,
@@ -100,6 +130,9 @@ def main() -> int:
                 if terms.save_masked_consent_screen(args.image_out, png):
                     status["status"] = "masked_screen_after_guest_request_saved"
                     status["masked_screenshot_saved"] = True
+                    if args.buttons_out is not None:
+                        status["guest_buttons_detail_saved"] = (
+                            save_guest_buttons_detail(args.buttons_out, png))
                 else:
                     status["status"] = "invalid_image_not_saved"
         except Exception as exc:
