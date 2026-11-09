@@ -101,7 +101,10 @@ const RVA = Object.freeze({
   firstBootProloguePokemonPanelOnTapPokemon: 0x1C7F0F4,
   firstBootProloguePokemonPanelSelectedIcon: 0x1C7F230,
   firstBootProloguePanelOnTapYes: 0x1C7E008,
-  authManagerRegisterUser: 0x1D2F8DC
+  authManagerRegisterUser: 0x1D2F8DC,
+  // Original ELF static audit reports a BLR instruction inside
+  // AtuhRegisterUser at 0x1D2FA20. Indirect target is UNRESOLVED.
+  authManagerIndirectDispatchSite: 0x1D2FA20
 });
 const begun = Date.now();
 const counts = {
@@ -141,6 +144,7 @@ const counts = {
   post_guest_candidate_1098_entered: 0,
   post_guest_candidate_16f4_entered: 0,
   auth_manager_register_user_entered: 0,
+  auth_manager_indirect_dispatch_site_entered: 0,
   firstboot_decision_gest_account_entered: 0,
   firstboot_denial_gest_account_entered: 0,
   firstboot_guest_start_callback_b84_6_entered: 0,
@@ -195,6 +199,7 @@ let guestChainCriticalHookCoverage = {
   confirm_second: false, positive_thunk: false, negative_thunk: false,
   decision_controller: false, denial_controller: false,
   go_to_phase: false, register_manager: false,
+  register_dispatch_site: false,
   register_serializer: false, register_response: false
 };
 function readCurrentFirstBootPhase() {
@@ -703,6 +708,13 @@ function install(lib) {
                        'auth_manager_register_user_entered');
   guestChainCriticalHookCoverage.register_manager =
     guestCallbackHookCoverage.register_manager;
+  // Instrument the original BLR *callsite*, not its unknown Xn target.
+  // Entering this instruction proves only that the manager reached an
+  // indirect dispatch; it cannot prove an HTTP request was transmitted.
+  guestChainCriticalHookCoverage.register_dispatch_site =
+    optionalUiObserver('register_dispatch_site',
+                       RVA.authManagerIndirectDispatchSite,
+                       'auth_manager_indirect_dispatch_site_entered');
   // Exact original IL2CPP UI method names and entry RVAs. Pure read-only
   // counters, with the original client's own clicks/decisions. No code calls
   // these native functions, no fields/args/pointers or account IDs exposed.
