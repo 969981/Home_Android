@@ -31,6 +31,7 @@ EVENT_NAMES = frozenset({
     "hook_attach_failed",
     "arm64_auth_observer_ready",
     "arm64_auth_observer_partial",
+    "registration_request_constructor_entered",
     "registration_request_serializer_entered",
     "registration_lng_cntry_packed_write_seen",
     "registration_request_formatter_entered",
@@ -121,6 +122,7 @@ CATEGORICAL_REASON = frozenset({
 })
 OBSERVER_NAMES = frozenset({
     "register_serialize", "register_packed_write", "register_callback",
+    "auth_register_request_ctor",
     "register_request_formatter", "register_response_formatter",
     "birthview_setdata", "birthview_year_change",
     "birthview_month_change", "birthview_day_change",
@@ -208,6 +210,10 @@ def sanitize_timeline_event(message: object) -> dict | None:
                            "token_response_handler_entered"):
         if source.get("same_token_ctor_instance_observed") is True:
             clean["same_token_ctor_instance_observed"] = True
+    if source["event"] in ("registration_request_serializer_entered",
+                           "registration_response_handler_entered"):
+        if source.get("same_register_ctor_instance_observed") is True:
+            clean["same_register_ctor_instance_observed"] = True
     if source["event"] == "nearby_conditional_callback_blr_entered":
         module_hit = source.get("dispatch_target_in_original_libil2cpp")
         if type(module_hit) is bool:
@@ -317,6 +323,14 @@ REGISTER_TAIL_HOOK_KEYS = (
     "tail_target_1d2f1f8", "downstream_1d35cc8",
 )
 TOKEN_REQUEST_HOOK_KEYS = ("serialize", "callback")
+
+
+def sanitize_register_request_ctor_coverage(snapshot: object) -> bool | None:
+    """True only if the original AuthRegisterUser constructor hook attached."""
+    if not isinstance(snapshot, dict):
+        return None
+    result = snapshot.get("register_request_ctor_hook_attached")
+    return result if type(result) is bool else None
 
 
 def sanitize_token_request_hook_coverage(snapshot: object) -> dict:
@@ -452,6 +466,11 @@ def observe_guest_register_order(
                                "token_response_handler_entered")
             and e.get("same_token_ctor_instance_observed") is True
             for e in events[offset:]),
+        "same_auth_register_request_instance_observed":any(
+            e.get("event") in ("registration_request_serializer_entered",
+                               "registration_response_handler_entered")
+            and e.get("same_register_ctor_instance_observed") is True
+            for e in events[offset:]),
         "identical_native_callstack_proven":False,
         "identical_registration_request_proven":False,
         "server_registration_proven":False,
@@ -469,6 +488,7 @@ LIVE_GUEST_CHAIN_EVENTS = frozenset({
     "auth_manager_register_user_entered",
     "auth_manager_tail_target_entered",
     "auth_manager_tail_callee_35cc8_entered",
+    "registration_request_constructor_entered",
     "nearby_conditional_callback_blr_entered",
     "registration_request_serializer_entered",
     "registration_response_handler_entered",
@@ -964,6 +984,7 @@ def run(apk: Path, script_path: Path, serial: str | None,
     critical_guest_coverage = sanitize_guest_chain_critical_coverage(None)
     register_tail_coverage = sanitize_register_tail_hook_coverage(None)
     token_request_coverage = sanitize_token_request_hook_coverage(None)
+    register_request_ctor_coverage = sanitize_register_request_ctor_coverage(None)
 
     def on_message(message, _data):
         nonlocal ready, script_error
@@ -1027,12 +1048,14 @@ def run(apk: Path, script_path: Path, serial: str | None,
                 critical_guest_coverage = sanitize_guest_chain_critical_coverage(snapshot)
                 register_tail_coverage = sanitize_register_tail_hook_coverage(snapshot)
                 token_request_coverage = sanitize_token_request_hook_coverage(snapshot)
+                register_request_ctor_coverage = sanitize_register_request_ctor_coverage(snapshot)
             except Exception:
                 guest_hook_coverage = sanitize_guest_hook_coverage(None)
                 post_guest_ui_coverage = sanitize_post_guest_ui_hook_coverage(None)
                 critical_guest_coverage = sanitize_guest_chain_critical_coverage(None)
                 register_tail_coverage = sanitize_register_tail_hook_coverage(None)
                 token_request_coverage = sanitize_token_request_hook_coverage(None)
+                register_request_ctor_coverage = sanitize_register_request_ctor_coverage(None)
         # The first UTID may be received while waiting; it is never printed in
         # the public event stream. Explicit local RPC optionally displays it.
         if show_local_values and script is not None and ready:
@@ -1060,6 +1083,7 @@ def run(apk: Path, script_path: Path, serial: str | None,
                     snapshot)
                 register_tail_coverage = sanitize_register_tail_hook_coverage(snapshot)
                 token_request_coverage = sanitize_token_request_hook_coverage(snapshot)
+                register_request_ctor_coverage = sanitize_register_request_ctor_coverage(snapshot)
             except Exception:
                 pass
         if pid is not None and not resumed:
@@ -1079,6 +1103,7 @@ def run(apk: Path, script_path: Path, serial: str | None,
     report["guest_chain_critical_hook_coverage"] = critical_guest_coverage
     report["registration_tail_observer_hook_coverage"] = register_tail_coverage
     report["token_request_hook_coverage"] = token_request_coverage
+    report["register_request_ctor_hook_attached"] = register_request_ctor_coverage
     report["guest_register_entry_order"] = observe_guest_register_order(
         events, critical_guest_coverage, register_tail_coverage)
     report["registration_tail_same_transaction_verified"] = False
