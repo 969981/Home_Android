@@ -903,6 +903,8 @@ def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
                                 "--phase-report", str(phase_path),
                                 "--image-out", str(
                                     guest_dir / "guest_confirmation_masked.png"),
+                                "--buttons-out", str(
+                                    guest_dir / "guest_buttons_only.png"),
                                 "--status-out", str(
                                     guest_dir / "guest_capture_status.json"),
                             ]
@@ -925,6 +927,8 @@ def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
                                             ) is True,
                                         "masked_image_saved":
                                             g.get("masked_screenshot_saved") is True,
+                                        "buttons_detail_saved":
+                                            g.get("guest_buttons_detail_saved") is True,
                                         "next_screen_clicked": False,
                                         "registration_attempted": False,
                                         "utid_observed": False,
