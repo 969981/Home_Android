@@ -120,6 +120,7 @@ const RVA = Object.freeze({
 const begun = Date.now();
 const counts = {
   registration_request_constructor_entered: 0,
+  registration_request_constructor_returned: 0,
   registration_request_serializer_entered: 0,
   registration_lng_cntry_packed_write_seen: 0,
   registration_request_formatter_entered: 0,
@@ -158,6 +159,7 @@ const counts = {
   auth_manager_register_user_entered: 0,
   auth_manager_tail_target_entered: 0,
   auth_manager_tail_callee_35cc8_entered: 0,
+  auth_manager_tail_callee_35cc8_returned: 0,
   nearby_conditional_callback_blr_entered: 0,
   firstboot_decision_gest_account_entered: 0,
   firstboot_denial_gest_account_entered: 0,
@@ -212,11 +214,32 @@ let registerTailObserverHookCoverage = {
   tail_target_1d2f1f8: false,
   downstream_1d35cc8: false
 };
-// Bounded private identities of CreateToken request instances. Only equality
-// bits are emitted; no pointer or ID is included in any report.
-const observedTokenCtorInstances = new Set();
-const observedTokenCtorInstancesFromTail = new Set();
-const observedRegisterCtorInstances = new Set();
+// Bounded ephemeral maps of completed constructors; map keys (pointers) are
+// retained only within the private Frida agent. No raw address is emitted.
+// A timestamp guard limits, but cannot eliminate, stale-address reuse risk.
+const COMPLETED_CTOR_MAX_AGE_MS = 120000;
+const MAX_CTOR_IDENTITIES = 64;
+let guestObservationEpoch = 0;
+const observedTokenCtorInstances = new Map();
+const observedTokenCtorInstancesFromTail = new Map();
+const observedRegisterCtorInstances = new Map();
+
+function completedCtorRemember(instanceKey, instanceEpoch, instances) {
+  if (typeof instanceKey !== 'string' || instanceEpoch === 0 ||
+      instanceEpoch !== guestObservationEpoch) return;
+  if (!instances.has(instanceKey) &&
+      instances.size >= MAX_CTOR_IDENTITIES) return;
+  instances.set(instanceKey, Date.now());
+}
+function completedCtorMatch(args, instances) {
+  try {
+    if (args[0].isNull()) return false;
+    const createdAt = instances.get(args[0].toString());
+    if (typeof createdAt !== 'number') return false;
+    const elapsed = Date.now() - createdAt;
+    return elapsed >= 0 && elapsed <= COMPLETED_CTOR_MAX_AGE_MS;
+  } catch (_) { return false; }
+}
 let registerRequestCtorHookAttached = false;
 let tokenRequestHookCoverage = {serialize: false, callback: false};
 // All values are set ONLY by a real Interceptor.attach success/failure.
@@ -708,6 +731,7 @@ function install(lib) {
   try {
     Interceptor.attach(ptr(RVA.firstBootConfirmGestAccountSecond), {
       onEnter() {
+        guestObservationEpoch++;
         observedTokenCtorInstances.clear();
         observedTokenCtorInstancesFromTail.clear();
         observedRegisterCtorInstances.clear();
@@ -763,17 +787,28 @@ function install(lib) {
   try {
     Interceptor.attach(ptr(RVA.authManagerTailCallee35CC8), {
       onEnter(args) {
-        let calledFromTail = false;
+        this.ctorEpoch = guestObservationEpoch;
+        this.ctorKey = null;
+        this.fromVerifiedTail = false;
         try {
-          calledFromTail = this.returnAddress.equals(
+          this.fromVerifiedTail = this.returnAddress.equals(
             ptr(RVA.authManagerTailCreateTokenReturnPC));
-          if (!args[0].isNull() && observedTokenCtorInstances.size < 64)
-            observedTokenCtorInstances.add(args[0].toString());
-          if (calledFromTail && !args[0].isNull() &&
-              observedTokenCtorInstancesFromTail.size < 64)
-            observedTokenCtorInstancesFromTail.add(args[0].toString());
+          if (!args[0].isNull()) this.ctorKey = args[0].toString();
         } catch (_) {}
-        milestone('auth_manager_tail_callee_35cc8_entered', calledFromTail ?
+        milestone('auth_manager_tail_callee_35cc8_entered',
+          this.fromVerifiedTail ?
+          {create_token_ctor_from_tail_callsite_observed: true} : {});
+      },
+      onLeave() {
+        // Do not treat an in-progress constructor as a completed request.
+        completedCtorRemember(this.ctorKey, this.ctorEpoch,
+          observedTokenCtorInstances);
+        if (this.fromVerifiedTail) {
+          completedCtorRemember(this.ctorKey, this.ctorEpoch,
+            observedTokenCtorInstancesFromTail);
+        }
+        milestone('auth_manager_tail_callee_35cc8_returned',
+          this.fromVerifiedTail ?
           {create_token_ctor_from_tail_callsite_observed: true} : {});
       }
     });
@@ -936,26 +971,26 @@ function install(lib) {
   // methods from ApiRequestCreateToken. Object addresses remain local.
   // Their equality is only evidence of the same native address in this
   // observation window, never proof of a network request or backend success.
-  function recordCtorInstance(args, instances) {
-    try {
-      if (!args[0].isNull() && instances.size < 64)
-        instances.add(args[0].toString());
-    } catch (_) {}
-  }
+  // Constructor entry alone cannot authorize a same-request match.
   function ctorInstanceMatched(args, instances) {
-    try {
-      return !args[0].isNull() && instances.has(args[0].toString());
-    } catch (_) {
-      return false;
-    }
+    return completedCtorMatch(args, instances);
   }
   // Optional: failed constructor coverage must not suppress existing
   // serializer/response observation. Missing match then remains UNKNOWN.
   try {
     Interceptor.attach(ptr(RVA.registerConstructor), {
       onEnter(args) {
-        recordCtorInstance(args, observedRegisterCtorInstances);
+        this.ctorEpoch = guestObservationEpoch;
+        this.ctorKey = null;
+        try {
+          if (!args[0].isNull()) this.ctorKey = args[0].toString();
+        } catch (_) {}
         milestone('registration_request_constructor_entered');
+      },
+      onLeave() {
+        completedCtorRemember(this.ctorKey, this.ctorEpoch,
+          observedRegisterCtorInstances);
+        milestone('registration_request_constructor_returned');
       }
     });
     registerRequestCtorHookAttached = true;
