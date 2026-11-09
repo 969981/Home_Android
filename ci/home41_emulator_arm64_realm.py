@@ -1077,6 +1077,96 @@ def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
                                             "status": "after_first_capture_timeout",
                                             "masked_image_saved": False,
                                         }
+                                    if getattr(args,"confirm_guest_second_once",False):
+                                        result["guest_final_probe"] = {
+                                            "status": "final_guest_modal_not_verified",
+                                            "final_guest_button_tapped": False,
+                                            "post_click_screen_changed": False,
+                                        }
+                                        visual = result.get("after_first_visual", {})
+                                        if not (visual.get(
+                                                "native_pre_registration_confirmed") is True
+                                                and visual.get("masked_image_saved") is True
+                                                and visual.get("buttons_detail_saved") is True):
+                                            return result
+                                        phase_path.write_text(
+                                            json.dumps(result,ensure_ascii=False,
+                                                       indent=2,sort_keys=True)+"\n",
+                                            encoding="utf-8")
+                                        cmd = [
+                                            sys.executable,
+                                            str(Path(__file__).with_name(
+                                                "home41_guest_second_confirm_once.py")),
+                                            "--authorize-original-final-guest-once",
+                                            "--age-report",str(report_path),
+                                            "--phase-report",str(phase_path),
+                                            "--output-dir",str(guest_dir),
+                                        ]
+                                        try:
+                                            completed = subprocess.run(
+                                                cmd,capture_output=True,text=True,
+                                                timeout=95,check=False)
+                                            result["guest_final_helper_exit_code"] = (
+                                                completed.returncode)
+                                            statusfile = guest_dir / "guest_final_once_status.json"
+                                            if statusfile.is_file():
+                                                g=json.loads(statusfile.read_text(
+                                                    encoding="utf-8"))
+                                                result["guest_final_probe"] = {
+                                                    "status":g.get("status"),
+                                                    "final_guest_button_tapped":
+                                                        g.get("final_guest_button_tapped") is True,
+                                                    "post_click_screen_changed":
+                                                        g.get("post_click_screen_changed") is True,
+                                                    "close_button_tapped": False,
+                                                    "nintendo_link_tapped": False,
+                                                    "other_ui_tapped": False,
+                                                    "raw_postclick_screenshot_saved": False,
+                                                    "utid_saved": False,
+                                                    "token_saved": False,
+                                                }
+                                        except subprocess.TimeoutExpired:
+                                            result["guest_final_probe"]["status"]=(
+                                                "guest_final_helper_timeout")
+                                        if result["guest_final_probe"].get(
+                                                "final_guest_button_tapped") is True:
+                                            # Allow any original server responses and
+                                            # callbacks to settle; export COUNTS ONLY.
+                                            time.sleep(13)
+                                            live = sanitized_arm64_snapshot(
+                                                observer.arm64_agent.exports_sync.snapshot())
+                                            counts=live.get("counts",{})
+                                            ui=live.get("firstboot_ui",{})
+                                            result["post_guest_final_native"] = {
+                                                "status": "native_guest_final_snapshot_received",
+                                                "native_arm64":
+                                                    live.get("native_arm64") is True,
+                                                "hooks_ready":
+                                                    live.get("hooks_ready") is True,
+                                                "guest_confirm_second_entries": counts.get(
+                                                    "firstboot_confirm_gest_second_entered",0),
+                                                "registration_serializer_entries": counts.get(
+                                                    "registration_request_serializer_entered",0),
+                                                "registration_response_handler_entries": counts.get(
+                                                    "registration_response_handler_entered",0),
+                                                "token_response_handler_entries": counts.get(
+                                                    "token_response_handler_entered",0),
+                                                "first_basic_seen":
+                                                    live.get("first_basic_seen") is True,
+                                                "first_basic_utid_event_count": counts.get(
+                                                    "first_basic_utid_observed",0),
+                                                "last_requested_phase_index":
+                                                    ui.get("last_requested_phase_enum_index"),
+                                                "last_requested_phase_name":
+                                                    ui.get("last_requested_phase_name"),
+                                                "actual_server_registration_confirmed": False,
+                                                "account_persisted_confirmed": False,
+                                                "six_digit_home_id_verified": False,
+                                                "utid_raw_or_candidate_logged": False,
+                                                "tokens_logged": False,
+                                                "response_body_logged": False,
+                                                "post_registration_image_saved": False,
+                                            }
             return result
         if getattr(args, "probe_phase4_decline_once", False):
             # The only permitted UI action on the new Phase 4 screen is the
@@ -1309,6 +1399,11 @@ def main() -> int:
                         help="One disposable-AVD Terms confirmation followed by read-only native phase snapshot; never register")
     parser.add_argument("--authorize-terms-next-phase-once", action="store_true",
                         help="Explicit one-run authorization for original Terms UI on this disposable AVD")
+    parser.add_argument("--confirm-guest-second-once", action="store_true",
+                        help="One official final 以游客身份开始使用, may create disposable guest")
+    parser.add_argument("--authorize-disposable-guest-confirm-once",
+                        action="store_true",
+                        help="Explicit approval of one real original final guest confirmation")
     parser.add_argument("--capture-post-guest-first-screen", action="store_true",
                         help="Read-only masked second guest prompt, only when no registration/basic")
     parser.add_argument("--confirm-guest-start-once", action="store_true",
@@ -1436,6 +1531,23 @@ def main() -> int:
             args.confirm_guest_start_once and
             args.authorize_disposable_guest_creation_once):
         print('{"status":"after_first_ui_requires_original_guest_yes_single_step"}')
+        return 2
+    if args.confirm_guest_second_once and not (
+            args.authorize_disposable_guest_confirm_once
+            and args.capture_post_guest_first_screen
+            and args.confirm_guest_start_once
+            and args.authorize_disposable_guest_creation_once
+            and args.capture_guest_confirmation_screen
+            and args.probe_nintendo_no_link_once
+            and args.authorize_irreversible_nintendo_no_link_once
+            and args.capture_phase7_requested_screen
+            and args.probe_phase4_agree_once
+            and args.authorize_phase4_agree_once
+            and args.probe_terms_next_phase_once
+            and args.authorize_terms_next_phase_once
+            and not args.assisted_single_signup
+            and not args.probe_phase4_decline_once):
+        print('{"status":"guest_final_requires_full_original_single_signup_chain"}')
         return 2
     observer = ARM64RealmStageMonitor(
         args.server, args.network_script, args.arm64_script,
@@ -1606,6 +1718,19 @@ def main() -> int:
                     and visual.get("native_pre_registration_confirmed") is True
                     and visual.get("masked_image_saved") is True
                     and visual.get("buttons_detail_saved") is True)
+            if args.confirm_guest_second_once:
+                click = (phase_probe_result or {}).get("guest_final_probe",{})
+                native = (phase_probe_result or {}).get(
+                    "post_guest_final_native",{})
+                transition_ok = (
+                    transition_ok
+                    and click.get("final_guest_button_tapped") is True
+                    and click.get("post_click_screen_changed") is True
+                    and click.get("close_button_tapped") is False
+                    and native.get("native_arm64") is True
+                    and native.get("hooks_ready") is True
+                    and type(native.get("guest_confirm_second_entries")) is int
+                    and native.get("guest_confirm_second_entries") >= 1)
             return 0 if transition_ok else 3
         if args.confirm_phase4_optout_modal_once:
             modal = (phase_probe_result or {}).get("phase4_modal_probe", {})
