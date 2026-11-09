@@ -102,6 +102,10 @@ const RVA = Object.freeze({
   firstBootProloguePokemonPanelSelectedIcon: 0x1C7F230,
   firstBootProloguePanelOnTapYes: 0x1C7E008,
   authManagerRegisterUser: 0x1D2F8DC,
+  // Original byte-confirmed tail branch at 0x1D2F9E8 leads here.
+  // 0x1D35CC8 is a BL callee in that tail target, official name UNKNOWN.
+  authManagerTailTarget: 0x1D2F1F8,
+  authManagerTailCallee35CC8: 0x1D35CC8,
   // IMPORTANT: original A64 0x1D2F9F8 is a fresh function prologue
   // after the prior tail-branch at 0x1D2F9E8. The BLR below belongs to
   // an ADJACENT conditional callback helper, not a proven RegisterUser
@@ -146,6 +150,8 @@ const counts = {
   post_guest_candidate_1098_entered: 0,
   post_guest_candidate_16f4_entered: 0,
   auth_manager_register_user_entered: 0,
+  auth_manager_tail_target_entered: 0,
+  auth_manager_tail_callee_35cc8_entered: 0,
   nearby_conditional_callback_blr_entered: 0,
   firstboot_decision_gest_account_entered: 0,
   firstboot_denial_gest_account_entered: 0,
@@ -196,6 +202,10 @@ let guestCallbackHookCoverage = {
 // on whether the method has been invoked yet.
 let postGuestUiHookCoverage = {};
 let nearbyConditionalCallbackBlrHookAttached = false;
+let registerTailObserverHookCoverage = {
+  tail_target_1d2f1f8: false,
+  downstream_1d35cc8: false
+};
 // All values are set ONLY by a real Interceptor.attach success/failure.
 // These are the coverage gates for interpreting absent guest callbacks.
 let guestChainCriticalHookCoverage = {
@@ -474,7 +484,9 @@ rpc.exports = {
       post_guest_ui_hook_coverage: {...postGuestUiHookCoverage},
       guest_chain_critical_hook_coverage: {...guestChainCriticalHookCoverage},
       nearby_conditional_callback_blr_hook_attached:
-        nearbyConditionalCallbackBlrHookAttached
+        nearbyConditionalCallbackBlrHookAttached,
+      registration_tail_observer_hook_coverage:
+        {...registerTailObserverHookCoverage}
     };
   },
   // Explicit single local-form interaction. Never used by the ordinary
@@ -712,6 +724,16 @@ function install(lib) {
                        'auth_manager_register_user_entered');
   guestChainCriticalHookCoverage.register_manager =
     guestCallbackHookCoverage.register_manager;
+  // These two entries follow byte-verified original A64 B/BL targets.
+  // They are read-only entrance markers, not validated same-request IDs.
+  registerTailObserverHookCoverage.tail_target_1d2f1f8 =
+    optionalUiObserver('manager_tail_target_1d2f1f8',
+                       RVA.authManagerTailTarget,
+                       'auth_manager_tail_target_entered');
+  registerTailObserverHookCoverage.downstream_1d35cc8 =
+    optionalUiObserver('manager_tail_callee_1d35cc8',
+                       RVA.authManagerTailCallee35CC8,
+                       'auth_manager_tail_callee_35cc8_entered');
   // This is an ADJACENT conditional callback helper, not a verified
   // body of AtuhRegisterUser: 0x1D2F9E8 branches away, then 0x1D2F9F8
   // has a new STP prologue before 0x1D2FA20 BLR X8.
