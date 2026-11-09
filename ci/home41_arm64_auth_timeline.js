@@ -102,9 +102,11 @@ const RVA = Object.freeze({
   firstBootProloguePokemonPanelSelectedIcon: 0x1C7F230,
   firstBootProloguePanelOnTapYes: 0x1C7E008,
   authManagerRegisterUser: 0x1D2F8DC,
-  // Original ELF static audit reports a BLR instruction inside
-  // AtuhRegisterUser at 0x1D2FA20. Indirect target is UNRESOLVED.
-  authManagerIndirectDispatchSite: 0x1D2FA20
+  // IMPORTANT: original A64 0x1D2F9F8 is a fresh function prologue
+  // after the prior tail-branch at 0x1D2F9E8. The BLR below belongs to
+  // an ADJACENT conditional callback helper, not a proven RegisterUser
+  // body/serializer dispatch. Its source and purpose are UNCLASSIFIED.
+  nearbyConditionalCallbackBlr: 0x1D2FA20
 });
 const begun = Date.now();
 const counts = {
@@ -144,7 +146,7 @@ const counts = {
   post_guest_candidate_1098_entered: 0,
   post_guest_candidate_16f4_entered: 0,
   auth_manager_register_user_entered: 0,
-  auth_manager_indirect_dispatch_site_entered: 0,
+  nearby_conditional_callback_blr_entered: 0,
   firstboot_decision_gest_account_entered: 0,
   firstboot_denial_gest_account_entered: 0,
   firstboot_guest_start_callback_b84_6_entered: 0,
@@ -193,13 +195,13 @@ let guestCallbackHookCoverage = {
 // Each value is the actual Interceptor.attach outcome, not a guess based
 // on whether the method has been invoked yet.
 let postGuestUiHookCoverage = {};
+let nearbyConditionalCallbackBlrHookAttached = false;
 // All values are set ONLY by a real Interceptor.attach success/failure.
 // These are the coverage gates for interpreting absent guest callbacks.
 let guestChainCriticalHookCoverage = {
   confirm_second: false, positive_thunk: false, negative_thunk: false,
   decision_controller: false, denial_controller: false,
   go_to_phase: false, register_manager: false,
-  register_dispatch_site: false,
   register_serializer: false, register_response: false
 };
 function readCurrentFirstBootPhase() {
@@ -470,7 +472,9 @@ rpc.exports = {
       counts: {...counts},
       guest_callback_hook_coverage: {...guestCallbackHookCoverage},
       post_guest_ui_hook_coverage: {...postGuestUiHookCoverage},
-      guest_chain_critical_hook_coverage: {...guestChainCriticalHookCoverage}
+      guest_chain_critical_hook_coverage: {...guestChainCriticalHookCoverage},
+      nearby_conditional_callback_blr_hook_attached:
+        nearbyConditionalCallbackBlrHookAttached
     };
   },
   // Explicit single local-form interaction. Never used by the ordinary
@@ -708,13 +712,14 @@ function install(lib) {
                        'auth_manager_register_user_entered');
   guestChainCriticalHookCoverage.register_manager =
     guestCallbackHookCoverage.register_manager;
-  // Exact original A64 instruction 0xD63F0100 is BLR X8 at
-  // libil2cpp RVA 0x1D2FA20. Read the CODE POINTER only to classify its
-  // normalized RVA inside the original module; NEVER emit its absolute VA,
-  // an out-of-module address, network values, or other native arguments.
-  // This does NOT identify the target function or prove HTTP transmission.
+  // This is an ADJACENT conditional callback helper, not a verified
+  // body of AtuhRegisterUser: 0x1D2F9E8 branches away, then 0x1D2F9F8
+  // has a new STP prologue before 0x1D2FA20 BLR X8.
+  // Read the CODE POINTER only to classify its normalized RVA inside the
+  // original module; NEVER emit its absolute VA, network or userdata.
+  // This event is NOT a mandatory registration step.
   try {
-    Interceptor.attach(ptr(RVA.authManagerIndirectDispatchSite), {
+    Interceptor.attach(ptr(RVA.nearbyConditionalCallbackBlr), {
       onEnter() {
         const observation = {};
         try {
@@ -732,13 +737,15 @@ function install(lib) {
         } catch (_) {
           // Missing/invalid code target remains UNKNOWN, not false.
         }
-        milestone('auth_manager_indirect_dispatch_site_entered', observation);
+        milestone('nearby_conditional_callback_blr_entered', observation);
       }
     });
-    guestChainCriticalHookCoverage.register_dispatch_site = true;
+    nearbyConditionalCallbackBlrHookAttached = true;
   } catch (_) {
-    guestChainCriticalHookCoverage.register_dispatch_site = false;
-    emit('optional_hook_attach_failed', {observer: 'register_dispatch_site'});
+    nearbyConditionalCallbackBlrHookAttached = false;
+    emit('optional_hook_attach_failed', {
+      observer: 'nearby_conditional_callback_blr'
+    });
   }
   // Exact original IL2CPP UI method names and entry RVAs. Pure read-only
   // counters, with the original client's own clicks/decisions. No code calls
