@@ -755,6 +755,47 @@ def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
                     "nintendo_account_linking_attempted": False,
                     "utid_saved": False,
                 }
+                if getattr(args, "capture_phase7_requested_screen", False):
+                    # Evidence-only capture: original GoToPhase requested 7,
+                    # but the current controller can be temporarily missing.
+                    # Do not claim the on-screen phase is fully initialized.
+                    capture_dir = out / "home41_after_phase4_agree"
+                    phase_path.write_text(
+                        json.dumps(result, ensure_ascii=False,
+                                   indent=2, sort_keys=True) + "\n",
+                        encoding="utf-8")
+                    cmd = [
+                        sys.executable,
+                        str(Path(__file__).with_name(
+                            "home41_post_phase4_agree_screen.py")),
+                        "--age-report", str(report_path),
+                        "--phase-report", str(phase_path),
+                        "--image-out", str(capture_dir / "next_screen_masked.png"),
+                        "--status-out", str(capture_dir / "capture_status.json"),
+                    ]
+                    try:
+                        done = subprocess.run(
+                            cmd, capture_output=True, text=True,
+                            timeout=55, check=False)
+                        result["phase7_capture_exit_code"] = done.returncode
+                        status_file = capture_dir / "capture_status.json"
+                        if status_file.is_file():
+                            z = json.loads(status_file.read_text(encoding="utf-8"))
+                            result["phase7_screen_capture"] = {
+                                "status": z.get("status"),
+                                "masked_image_saved":
+                                    z.get("masked_image_saved") is True,
+                                "phase7_requested":
+                                    z.get("original_phase7_request_confirmed") is True,
+                                "new_screen_interacted": False,
+                                "nintendo_account_linked": False,
+                                "account_registration_attempted": False,
+                            }
+                    except subprocess.TimeoutExpired:
+                        result["phase7_screen_capture"] = {
+                            "status": "phase7_masked_capture_timeout",
+                            "masked_image_saved": False,
+                        }
             return result
         if getattr(args, "probe_phase4_decline_once", False):
             # The only permitted UI action on the new Phase 4 screen is the
@@ -987,6 +1028,8 @@ def main() -> int:
                         help="One disposable-AVD Terms confirmation followed by read-only native phase snapshot; never register")
     parser.add_argument("--authorize-terms-next-phase-once", action="store_true",
                         help="Explicit one-run authorization for original Terms UI on this disposable AVD")
+    parser.add_argument("--capture-phase7-requested-screen", action="store_true",
+                        help="Evidence-only masked screenshot after verified Phase7 request and opt-in")
     parser.add_argument("--probe-phase4-agree-once", action="store_true",
                         help="One user-authorized original Phase4 optional-data collection Agree")
     parser.add_argument("--authorize-phase4-agree-once", action="store_true",
@@ -1057,6 +1100,9 @@ def main() -> int:
         )):
             print('{"status":"phase4_agree_requires_exclusive_explicit_optin"}')
             return 2
+    if args.capture_phase7_requested_screen and not args.probe_phase4_agree_once:
+        print('{"status":"phase7_capture_requires_verified_original_phase4_agree"}')
+        return 2
     observer = ARM64RealmStageMonitor(
         args.server, args.network_script, args.arm64_script,
         select_year_1999=args.select_local_year_1999,
@@ -1166,7 +1212,7 @@ def main() -> int:
         if args.probe_phase4_agree_once:
             agree = (phase_probe_result or {}).get("phase4_agree_probe", {})
             after = (phase_probe_result or {}).get("post_phase4_agree_native", {})
-            return 0 if (
+            transition_ok = (
                 base_ok and probe_ok
                 and agree.get("optional_data_collection_agree_tapped") is True
                 and agree.get("post_agree_screen_changed") is True
@@ -1174,7 +1220,14 @@ def main() -> int:
                     "phase_5_warning_confirmed",
                     "native_phase_current_confirmed",
                     "native_phase_request_advanced_current_unreadable")
-            ) else 3
+            )
+            if args.capture_phase7_requested_screen:
+                screen = (phase_probe_result or {}).get("phase7_screen_capture", {})
+                transition_ok = (
+                    transition_ok
+                    and screen.get("phase7_requested") is True
+                    and screen.get("masked_image_saved") is True)
+            return 0 if transition_ok else 3
         if args.confirm_phase4_optout_modal_once:
             modal = (phase_probe_result or {}).get("phase4_modal_probe", {})
             post = (phase_probe_result or {}).get("post_modal_native", {})
