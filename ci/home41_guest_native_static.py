@@ -54,7 +54,10 @@ WINDOWS={
     "FirstBoot.ProloguePokemonPanel.Open":(0x1C7DC8C,0xD4),
     "FirstBoot.ProloguePokemonPanel.OnTapPokemon":(0x1C7F0F4,0x13C),
     "FirstBoot.IconSelecter.OnTapIcon":(0x1C803AC,0x194),
-    "ApiManagerLogin.AtuhRegisterUser":(0x1D2F8DC,0x200),
+    # The prior 0x200 scan WINDOW crossed another function's prologue.
+    # End the manager window before the new prologue at 0x1D2F9F8.
+    "ApiManagerLogin.AtuhRegisterUser":(0x1D2F8DC,0x11C),
+    "Unclassified.AdjacentConditionalCallback":(0x1D2F9F8,0x38),
     "ApiRequestAuthRegisterUser.SerializeRequestParameter":(0x1D334A4,0x130),
     "ApiRequestAuthRegisterUser.CallAfterResponse":(0x1D33294,0x180),
 }
@@ -76,9 +79,14 @@ EXPECTED_GUEST_START_THUNK = (
     0x528000E8, 0x7200003F, 0x528001C9, 0x1A881121, 0x17FFEDD0
 )
 EXPECTED_GUEST_DECISION_STORE = (0x1DE55F4, 0x3904E668)
-# Raw byte audit artifact #42570544265 identified a BLR at this
-# location.  An indirect BLR register is NOT the target method identity.
-EXPECTED_MANAGER_DISPATCH_BLR_PC = 0x1D2FA20
+# The original bounded scan included two neighboring code regions:
+# 0x1D2F9E8 = unconditional tail branch away; 0x1D2F9F8 = new STP prologue.
+# Therefore 0x1D2FA20 BLR belongs to an UNCLASSIFIED adjacent callback;
+# it must not be placed on the mandatory RegisterUser -> Serializer path.
+EXPECTED_NEARBY_CALLBACK_BLR_PC = 0x1D2FA20
+EXPECTED_ADJACENT_PROLOGUE = (0x1D2F9F8, 0xA9BF4FFE)
+EXPECTED_PRECEDING_BRANCH = (0x1D2F9E8, 0x17FFFE04)
+EXPECTED_ADJACENT_RETURN = (0x1D2FA2C, 0xD65F03C0)
 
 
 
@@ -202,12 +210,22 @@ def verify_verified_guest_branch_chain(so:bytes,segs:list[dict])->dict:
         "<I",extract_at_rva(so,segs,pc,4))[0]
     if actual_store != expected_store:
         raise ValueError("_isDecisionGest original store opcode mismatch")
-    callpc = EXPECTED_MANAGER_DISPATCH_BLR_PC
+    callpc = EXPECTED_NEARBY_CALLBACK_BLR_PC
+    boundary = {}
+    for name, (at,expected) in (
+        ("preceding_tail_branch", EXPECTED_PRECEDING_BRANCH),
+        ("adjacent_prologue", EXPECTED_ADJACENT_PROLOGUE),
+        ("adjacent_return", EXPECTED_ADJACENT_RETURN),
+    ):
+        actual=struct.unpack("<I",extract_at_rva(so,segs,at,4))[0]
+        if actual != expected:
+            raise ValueError(f"adjacent function boundary opcode mismatch at 0x{at:X}")
+        boundary[name] = {"rva":f"0x{at:X}", "opcode":f"0x{actual:08X}"}
     indirect_opcode = struct.unpack(
         "<I", extract_at_rva(so,segs,callpc,4))[0]
     if indirect_opcode & 0xFFFFFC1F != 0xD63F0000:
         raise ValueError(
-            f"register-manager indirect callsite missing BLR at 0x{callpc:X}"
+            f"adjacent callback callsite missing BLR at 0x{callpc:X}"
         )
     reg_index = (indirect_opcode >> 5) & 0x1F
     return {
@@ -220,8 +238,11 @@ def verify_verified_guest_branch_chain(so:bytes,segs:list[dict])->dict:
             "if_true":"GoToPhase(14) MT_LOGIN",
             "if_false":"GoToPhase(7) NA_LINK_CONTINUE",
         },
-        "manager_indirect_dispatch_site": {
+        "adjacent_conditional_callback_blr": {
             "rva":f"0x{callpc:X}",
+            "boundary_evidence":boundary,
+            "atuh_register_user_body_membership_verified":False,
+            "original_IL2CPP_method_identity_verified":False,
             "instruction":"BLR",
             "opcode":f"0x{indirect_opcode:08X}",
             "branch_register":f"X{reg_index}",
