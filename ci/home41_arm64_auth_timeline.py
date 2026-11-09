@@ -74,6 +74,8 @@ EVENT_NAMES = frozenset({
     "post_guest_candidate_1098_entered",
     "post_guest_candidate_16f4_entered",
     "auth_manager_register_user_entered",
+    "auth_manager_tail_target_entered",
+    "auth_manager_tail_callee_35cc8_entered",
     "nearby_conditional_callback_blr_entered",
     "firstboot_decision_gest_account_entered",
     "firstboot_denial_gest_account_entered",
@@ -130,6 +132,8 @@ OBSERVER_NAMES = frozenset({
     "guest_second_direct_callee_unclassified", "guest_second_decision_thunk",
     "guest_second_denial_thunk", "post_guest_candidate_1098",
     "post_guest_candidate_16f4", "auth_manager_register_user",
+    "manager_tail_target_1d2f1f8",
+    "manager_tail_callee_1d35cc8",
     "nearby_conditional_callback_blr",
     "decision_gest",
     "denial_gest",
@@ -327,6 +331,9 @@ GUEST_CHAIN_CHECKPOINTS = (
     ("guest_second_decision_thunk_entered", "positive_decision_thunk"),
     ("firstboot_decision_gest_account_entered", "decision_controller"),
     ("auth_manager_register_user_entered", "registration_manager"),
+    ("auth_manager_tail_target_entered", "register_manager_tail_target"),
+    ("auth_manager_tail_callee_35cc8_entered",
+     "register_manager_tail_downstream_unclassified"),
     ("registration_request_serializer_entered", "registration_serializer"),
     ("registration_response_handler_entered", "registration_response_callback"),
     ("token_response_handler_entered", "token_callback"),
@@ -342,6 +349,8 @@ LIVE_GUEST_CHAIN_EVENTS = frozenset({
     "firstboot_decision_gest_account_entered",
     "firstboot_denial_gest_account_entered",
     "auth_manager_register_user_entered",
+    "auth_manager_tail_target_entered",
+    "auth_manager_tail_callee_35cc8_entered",
     "nearby_conditional_callback_blr_entered",
     "registration_request_serializer_entered",
     "registration_response_handler_entered",
@@ -384,6 +393,10 @@ def diagnose_guest_chain(events: list[dict], coverage: dict) -> dict:
         status = "registration_response_callback_seen_result_unknown"
     elif "registration_request_serializer_entered" in seen:
         status = "registration_serializer_seen_http_send_not_proven"
+    elif "auth_manager_tail_callee_35cc8_entered" in seen:
+        status = "register_tail_downstream_seen_serializer_not_observed"
+    elif "auth_manager_tail_target_entered" in seen:
+        status = "register_tail_target_seen_downstream_not_observed"
     elif "auth_manager_register_user_entered" in seen:
         status = "register_manager_seen_serializer_not_observed"
     elif negative:
