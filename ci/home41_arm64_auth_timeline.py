@@ -198,6 +198,14 @@ def sanitize_timeline_event(message: object) -> dict | None:
         clean["index"] = index
     if source.get("observer") in OBSERVER_NAMES:
         clean["observer"] = source["observer"]
+    if source["event"] == "auth_manager_indirect_dispatch_site_entered":
+        module_hit = source.get("dispatch_target_in_original_libil2cpp")
+        if type(module_hit) is bool:
+            clean["dispatch_target_in_original_libil2cpp"] = module_hit
+        rva = source.get("dispatch_target_rva")
+        if module_hit is True and type(rva) is int and 0 <= rva < 0x40000000:
+            # Only a MODULE-RELATIVE code RVA; never copy raw X8 pointers.
+            clean["dispatch_target_rva"] = rva
     if source.get("reason") in CATEGORICAL_REASON:
         clean["reason"] = source["reason"]
     for key in ("original_dropdown_index_verified", "birthday_submission_attempted",
@@ -394,9 +402,20 @@ def diagnose_guest_chain(events: list[dict], coverage: dict) -> dict:
         status = "ui_method_or_phase_request_without_register_manager"
     else:
         status = "second_seen_no_followup_in_observation_window"
+    observed_code_rvas = sorted({
+        x["dispatch_target_rva"] for x in following
+        if x.get("event") == "auth_manager_indirect_dispatch_site_entered"
+        and type(x.get("dispatch_target_rva")) is int
+        and x.get("dispatch_target_in_original_libil2cpp") is True
+        and 0 <= x["dispatch_target_rva"] < 0x40000000
+    })[:16]
     return {
         "classification": status,
         "second_confirmation_seen": second is not None,
+        "indirect_dispatch_module_relative_target_rvas": [
+            f"0x{rva:X}" for rva in observed_code_rvas
+        ],
+        "indirect_dispatch_target_function_identity_verified": False,
         "observed_checkpoints": [
             label for event,label in GUEST_CHAIN_CHECKPOINTS if event in seen],
         "all_critical_hooks_installed": len(missing) == 0,
