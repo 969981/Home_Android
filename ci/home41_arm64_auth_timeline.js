@@ -211,6 +211,7 @@ let registerTailObserverHookCoverage = {
 // Bounded private identities of CreateToken request instances. Only equality
 // bits are emitted; no pointer or ID is included in any report.
 const observedTokenCtorInstances = new Set();
+let tokenRequestHookCoverage = {serialize: false, callback: false};
 // All values are set ONLY by a real Interceptor.attach success/failure.
 // These are the coverage gates for interpreting absent guest callbacks.
 let guestChainCriticalHookCoverage = {
@@ -491,7 +492,8 @@ rpc.exports = {
       nearby_conditional_callback_blr_hook_attached:
         nearbyConditionalCallbackBlrHookAttached,
       registration_tail_observer_hook_coverage:
-        {...registerTailObserverHookCoverage}
+        {...registerTailObserverHookCoverage},
+      token_request_hook_coverage: {...tokenRequestHookCoverage}
     };
   },
   // Explicit single local-form interaction. Never used by the ordinary
@@ -953,12 +955,14 @@ function install(lib) {
     milestone(eventName, matched ?
       {same_token_ctor_instance_observed: true} : {});
   }
-  hook('token_serialize', RVA.tokenSerialize, {
+  tokenRequestHookCoverage.serialize = hook('token_serialize',
+    RVA.tokenSerialize, {
     onEnter(args) {
       tokenRequestEntry('token_request_serializer_entered', args);
     }
   });
-  hook('token_callback', RVA.tokenCallback, {
+  tokenRequestHookCoverage.callback = hook('token_callback',
+    RVA.tokenCallback, {
     onEnter(args) {
       tokenRequestEntry('token_response_handler_entered', args);
     }
