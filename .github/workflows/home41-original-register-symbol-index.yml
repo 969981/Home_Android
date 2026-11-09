@@ -1,0 +1,81 @@
+name: HOME 4.1.0 original registration tail symbol index (read only)
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/home41-original-register-symbol-index.yml'
+      - 'ci/home41_original_symbol_exact_audit.py'
+      - 'ci/test_home41_original_symbol_exact_audit.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-script-method-index:
+    name: Match original 4.1.0 ScriptMethod RVA 0x1D35CC8 (no app)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout audit tool
+        uses: actions/checkout@v4
+      - name: Sparse checkout original unmodified HOME 4.1.0 symbol table
+        uses: actions/checkout@v4
+        with:
+          repository: 969981/PokeHome_Resources
+          ref: '4.1.0'
+          path: _home41_original_symbols
+          fetch-depth: 1
+          filter: blob:none
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            Unpack/Android/4.1.0/il2cpp/script.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify original source git blob and offline fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_path="_home41_original_symbols/Unpack/Android/4.1.0/il2cpp/script.json"
+          test -s "$source_path"
+          actual="$(git -C _home41_original_symbols hash-object "Unpack/Android/4.1.0/il2cpp/script.json")"
+          test "$actual" = '895419550af1e00a2482f01fcc6d1c07592a5995'
+          python -m py_compile ci/home41_original_symbol_exact_audit.py
+          PYTHONPATH=ci python -m unittest discover -s ci -p 'test_home41_original_symbol_exact_audit.py' -v
+      - name: Resolve exact method name of real RegisterUser downstream BL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python ci/home41_original_symbol_exact_audit.py \
+            --script "_home41_original_symbols/Unpack/Android/4.1.0/il2cpp/script.json" \
+            --output "ci-frida-results/home41_original_register_rva_exact.json" \
+            --markdown "ci-frida-results/HOME41_Original_Registration_RVA_Obsidian.md"
+          python - <<'PY'
+          import json,os
+          p="ci-frida-results/home41_original_register_rva_exact.json"
+          r=json.load(open(p,encoding='utf8'))
+          assert r['source_method_count'] > 100000
+          assert not r['runtime_registration_observed']
+          assert not r['server_guest_account_confirmed']
+          assert not r['six_digit_home_id_verified']
+          target=r['methods']['manager_tail_direct_callee']
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf8') as out:
+              out.write('## Verified original HOME 4.1.0 IL2CPP ScriptMethod index\n\n')
+              out.write('- Script source git blob SHA-1: `895419550af1e00a2482f01fcc6d1c07592a5995`\n')
+              out.write('- 0x1D35CC8 exact method-entry match: '+str(target['is_exact_method_entry'])+'\n')
+              for n in target['exact_names'][:12]:
+                  out.write('- Original method name: `'+n+'`\n')
+              out.write('- Runtime guest registration: NOT attempted by this workflow\n')
+          PY
+      - name: Upload strictly static original index evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: home41-original-4-1-0-registration-tail-method-identities
+          path: |
+            ci-frida-results/home41_original_register_rva_exact.json
+            ci-frida-results/HOME41_Original_Registration_RVA_Obsidian.md
+          retention-days: 7
+          if-no-files-found: warn
