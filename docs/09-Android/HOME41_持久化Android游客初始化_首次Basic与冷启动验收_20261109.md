@@ -190,3 +190,56 @@ py -3 ci/home41_arm64_auth_timeline.py --apk "$apk" --realm emulated --remote-fr
 这套仿真结果是 `runtime_emulated_arm64_agent`，不能替代原生 ARM64
 `home41_arm64_runtime_acceptance.py` 的完整三门槛验收。
 后续停止与启动 AVD 时不要选择 `-wipe-data`，也不要卸载或清除 HOME 数据。
+
+
+## 2026-11-09：原版字节验证后的游客决策与注册边界
+
+已从用户 Library 读取原版 HOME Android 4.1.0 APK，在本地验证 APK SHA-256
+`8dee598028cd70441f645c8fff96b093b76778d625cdf07c60109eced50ffac1`、
+ARM64 `libil2cpp.so` SHA-256
+`80bfbc3d480bf3c91297d65a441a37e40260b70fd8b0ddc8da70c34f0870b6fe`。
+
+直接在原版 AArch64 ELF 可执行 PT_LOAD 字节验证以下精确目标：
+
+| 原始跳转 PC | 指令 | 目标 |
+|---|---|---|
+| `0x1DEB4A4` | `B` | `0x1DE5508 DecisionGestAccount` |
+| `0x1DEB58C` | `B` | `0x1DE5698 DenialGestAccount` |
+| `0x1DE5690` | `B` | `0x1D2F8DC ApiManagerLogin.AtuhRegisterUser` |
+| `0x1DE64D0` | `B` | `0x1DE1C10 GoToPhase` |
+
+在 `DecisionGestAccount` 正常路径上，`0x1DE55F4 STRB W8,[X19,#0x139]`
+设置原版 `_isDecisionGest=1`，然后准备参数，在 `0x1DE5690`
+直接尾跳转至注册管理器。这不是 `BL`，所以此前仅扫描 `BL` 的调用图会遗漏。
+注意：静态字节核验并不证明用户本次操作确实命中这些跳板或服务器注册成功。
+同时修正旧候选：`0x1DE1098`、`0x1DE16F4` 分别是
+`_AddWarningPart`、`_AddPadder`，不是注册回调。
+
+### 持久化 Android 上监控已有原版 HOME 进程
+
+现有 `ci/home41_arm64_auth_timeline.py` 支持
+`--attach-running`，可在最终游客确认前附加到已经运行的
+原版 HOME；不会 spawn、新建进程、resume 已运行进程或清除 userdata。
+
+~~~powershell
+git pull origin master
+$apk = (Get-ChildItem 'ROMS/4.1.0/*.apk' | Select-Object -First 1).FullName
+py -3 ci/home41_arm64_auth_timeline.py --apk "$apk" --realm native --attach-running --timeout 1800 --output '.\local-home41-auth-timeline.json'
+~~~
+
+Frida Server、ADB、原版安装包哈希检查等前置条件仍须满足。
+模拟器 NativeBridge 用 `--realm emulated` 附加既有进程，不可冒充
+原生 ARM64。**必须在最终游客确认按钮点击前装好 Hook**；
+错过的回调无法补捕，不要重复注册账号只为取证。
+
+当前同一时间线会记录
+`ConfirmGestAccountSecond → decision_thunk / denial_thunk →
+DecisionGestAccount / DenialGestAccount → AtuhRegisterUser →
+SerializeRequestParameter → CallAfterResponse → Token/Login → basic.utid`。
+这里箭头均为需要**实际观测**的阶段依赖，缺失时返回未知而不认定成功。
+头像、序章、小火龙点击方法另有单独只读 Hook，用于区分 UI 尚未完成与注册调用未出现。
+不会记录真实 UTID、Token、HTTP body 或已注册账户私有截图。
+
+仓库 `ci/home41_guest_native_static.py` 新增原版八条分支及
+`b__84_6` 完整五指令、`_isDecisionGest` store 的断言；
+这些是静态证据，不是实际动态建号成功报告。
