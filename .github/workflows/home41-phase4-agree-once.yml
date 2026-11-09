@@ -1,0 +1,127 @@
+name: HOME 4.1.0 user-authorized optional data Agree, native next-phase proof
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/home41-phase4-agree-once.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: home41-phase4-optional-agree-single-avd
+  cancel-in-progress: false
+
+jobs:
+  one-phase4-agree:
+    if: contains(github.event.head_commit.message, '[home41-phase4-agree-once]')
+    name: Original Phase 4 right 同意 ONCE, read native phase; no account creation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify original APK, native and Phase 4 Agree safety tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q pillow 'frida==17.26.1'
+          python -m py_compile \
+            ci/home41_emulator_arm64_realm.py \
+            ci/home41_phase4_agree_once.py \
+            ci/home41_phase4_decline_once.py \
+            ci/home41_phase4_masked_capture.py \
+            ci/home41_terms_both_and_next.py
+          node --check ci/home41_arm64_auth_timeline.js
+          python -m unittest discover -s ci -p 'test_home41_phase4_agree_once.py' -v
+          python -m unittest discover -s ci -p 'test_home41_phase4_decline_once.py' -v
+          python -m unittest discover -s ci -p 'test_home41_phase4_masked_capture.py' -v
+          python -m unittest discover -s ci -p 'test_home41_post_terms_phase.py' -v
+          python -m unittest discover -s ci -p 'test_home41_emulator_arm64_realm.py' -v
+          APK="$(find ROMS/4.1.0 -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          test "$(sha256sum "$APK" | cut -d' ' -f1)" = '8dee598028cd70441f645c8fff96b093b76778d625cdf07c60109eced50ffac1'
+          echo "HOME41_APK=$APK" >> "$GITHUB_ENV"
+          mkdir -p ci-frida-results
+
+      - name: Download matching Frida server, retry transient errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          V="$(python -c 'import frida; print(frida.__version__)')"
+          test "$V" = "17.26.1"
+          curl -fLsS --retry 7 --retry-all-errors --retry-delay 3 --retry-max-time 420 \
+            --connect-timeout 20 --max-time 180 \
+            "https://github.com/frida/frida/releases/download/$V/frida-server-$V-android-x86_64.xz" \
+            -o /tmp/home41_frida_server.xz
+          xz -dc /tmp/home41_frida_server.xz > /tmp/home41_frida_server
+          chmod 700 /tmp/home41_frida_server
+          echo "HOME41_FRIDA_SERVER=/tmp/home41_frida_server" >> "$GITHUB_ENV"
+
+      - name: Enable KVM
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -e /dev/kvm
+
+      - name: Verified Terms then user-authorized Phase 4 RIGHT 同意 once
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          ram-size: 4096M
+          heap-size: 512M
+          disable-animations: true
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none -no-metrics
+          pre-emulator-launch-script: adb start-server
+          script: |
+            set -e
+            python ci/home41_emulator_arm64_realm.py --apk "$HOME41_APK" --output ci-frida-results --server "$HOME41_FRIDA_SERVER" --settle-seconds 10 --probe-birthday-year --select-local-year-1999 --select-local-month-day --probe-native-full-date-select --advance-birthday-once --probe-terms-next-phase-once --authorize-terms-next-phase-once --probe-phase4-agree-once --authorize-phase4-agree-once
+
+      - name: Upload only masked pre-agree screen and phase-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: home41-phase4-user-authorized-agree-native-phase
+          path: |
+            ci-frida-results/home41_post_terms_phase_report.json
+            ci-frida-results/home41_phase4_agree/phase4_agree_before_masked.png
+            ci-frida-results/home41_phase4_agree/phase4_agree_status.json
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Summarize original Phase 4 user-approved consent and next request
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          path=Path('ci-frida-results/home41_post_terms_phase_report.json')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as out:
+              out.write('\n## Phase 4 optional collection consent (user-authorized)\n\n')
+              if path.is_file():
+                  report=json.loads(path.read_text(encoding='utf8'))
+                  out.write('- Before: '+str(report.get('native_phase',{}).get('current_phase_name'))+'\n')
+                  click=report.get('phase4_agree_probe',{})
+                  for field in ('status','optional_data_collection_agree_tapped',
+                                'post_agree_screen_changed','disagree_button_tapped',
+                                'nintendo_account_linking_attempted'):
+                      out.write(f'- Click {field}: {click.get(field)}\n')
+                  native=report.get('post_phase4_agree_native',{})
+                  for field in ('status','current_phase_index','current_phase_name',
+                                'last_requested_phase_index','last_requested_phase_name',
+                                'go_to_phase_entries_before','go_to_phase_entries_after'):
+                      out.write(f'- Native {field}: {native.get(field)}\n')
+              else:
+                  out.write('- Phase 4 real-device proof unavailable.\n')
+              out.write('\nNo registration, Nintendo Account linking, UTID, tokens or post-consent raw screenshots are uploaded.\n')
+          PY
