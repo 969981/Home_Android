@@ -2,6 +2,9 @@
 """Offline A64 instruction and ELF program-header tests; no original APK needed."""
 import struct
 import unittest
+from unittest.mock import patch
+
+import home41_guest_native_static as native
 
 from home41_guest_native_static import (
     a64_bl_target,a64_b_target,audit_bytes,elf_load_segments,extract_at_rva,
@@ -45,6 +48,42 @@ class RawA64GuestAuditTests(unittest.TestCase):
         self.assertEqual(KNOWN[0x1DE64C0],"FirstBoot.GuestResultCallback_b84_6")
         # Name/position association remains static, not proof of actual call.
         self.assertNotEqual(KNOWN[0x1DE64C0],"ApiManagerLogin.AtuhRegisterUser")
+
+    def test_exact_guest_branch_invariant_passes_synthetic_A64_bytes(self):
+        encoded={}
+        for pc,kind,target in native.EXPECTED_BRANCHES:
+            imm=((target-pc)//4)&0x03ffffff
+            encoded[pc]=struct.pack(
+                "<I", (0x94000000 if kind=="BL" else 0x14000000)|imm)
+        encoded[0x1DE64C0]=struct.pack(
+            "<IIIII",*native.EXPECTED_GUEST_START_THUNK)
+        store_pc,store_insn=native.EXPECTED_GUEST_DECISION_STORE
+        encoded[store_pc]=struct.pack("<I",store_insn)
+        def fake_extract(_so,_segs,pc,length):
+            blob=encoded[pc]
+            self.assertEqual(len(blob),length)
+            return blob
+        with patch.object(native,"extract_at_rva",side_effect=fake_extract):
+            report=native.verify_verified_guest_branch_chain(b"",[])
+        self.assertEqual(report["verified_edge_count"],8)
+        self.assertFalse(report["actual_server_registration_confirmed"])
+        self.assertFalse(report["button_to_delegate_runtime_identity_verified"])
+        self.assertEqual(report["guest_start_callback"]["if_true"],
+                         "GoToPhase(14) MT_LOGIN")
+        self.assertEqual(report["guest_start_callback"]["if_false"],
+                         "GoToPhase(7) NA_LINK_CONTINUE")
+        self.assertTrue(any(
+            x["pc"]=="0x1DE5690" and
+            x["instruction"]=="B" and
+            x["target_rva"]=="0x1D2F8DC"
+            for x in report["edges"]))
+        broken=dict(encoded)
+        broken[0x1DE5690]=struct.pack("<I",0xD503201F)
+        with patch.object(
+                native,"extract_at_rva",
+                side_effect=lambda so,segs,pc,length:broken[pc]):
+            with self.assertRaisesRegex(ValueError,"branch opcode mismatch"):
+                native.verify_verified_guest_branch_chain(b"",[])
 
     def test_reject_non_aarch64_and_invalid_segment_table(self):
         b=bytearray(64)
