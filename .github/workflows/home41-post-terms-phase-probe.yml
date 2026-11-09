@@ -18,7 +18,7 @@ concurrency:
 jobs:
   post-terms-phase:
     if: contains(github.event.head_commit.message, '[home41-post-terms-phase-once]')
-    name: Observe native FirstBoot phase after original Terms Next
+    name: Observe native Phase 4 after Terms and mask its actual screen
     runs-on: ubuntu-24.04
     timeout-minutes: 70
     steps:
