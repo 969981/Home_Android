@@ -16,6 +16,80 @@ def ev(name, t):
 
 
 class GuestChronologyFixtures(unittest.TestCase):
+    def test_classify_second_then_positive_register_chain(self):
+        full = {name: True for name in
+                timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS}
+        events = [
+            ev("firstboot_confirm_gest_second_entered",10),
+            ev("guest_second_decision_thunk_entered",11),
+            ev("firstboot_decision_gest_account_entered",12),
+            ev("auth_manager_register_user_entered",13),
+            ev("registration_request_serializer_entered",14),
+            ev("registration_response_handler_entered",20),
+            ev("first_basic_utid_observed",30),
+        ]
+        result = timeline.diagnose_guest_chain(events,full)
+        self.assertEqual(result["classification"],
+                         "first_basic_seen_ui_six_digit_id_not_verified")
+        self.assertEqual(result["observed_checkpoints"][0],
+                         "second_confirmation")
+        self.assertTrue(result["all_critical_hooks_installed"])
+        self.assertFalse(result["server_registration_confirmed"])
+        self.assertFalse(result["ui_six_digit_id_verified"])
+        self.assertFalse(result["cold_start_account_restored_verified"])
+
+    def test_classify_guest_callback_gap_requires_hook_installation(self):
+        good = {key: True for key in
+                timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS}
+        bad = {**good, "positive_thunk": False,
+               "decision_controller": None}
+        events=[ev("firstboot_confirm_gest_second_entered",10)]
+        diagnosed=timeline.diagnose_guest_chain(events,bad)
+        self.assertEqual(diagnosed["classification"],
+                         "second_seen_no_followup_in_observation_window")
+        self.assertFalse(diagnosed["all_critical_hooks_installed"])
+        self.assertIn("positive_thunk",diagnosed[
+            "missing_or_unverified_critical_hooks"])
+        self.assertIn("decision_controller",diagnosed[
+            "missing_or_unverified_critical_hooks"])
+        self.assertTrue(timeline.diagnose_guest_chain(
+            events,good)["all_critical_hooks_installed"])
+
+    def test_mixed_decision_and_denial_never_confirm_registration(self):
+        coverage={key:True for key in
+                  timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS}
+        events=[
+            ev("firstboot_confirm_gest_second_entered",10),
+            ev("guest_second_decision_thunk_entered",11),
+            ev("guest_second_denial_thunk_entered",12),
+            ev("auth_manager_register_user_entered",14),
+        ]
+        result=timeline.diagnose_guest_chain(events,coverage)
+        self.assertEqual(result["classification"],
+                         "mixed_guest_decisions_require_instance_correlation")
+        self.assertFalse(result["server_registration_confirmed"])
+
+    def test_critical_coverage_sanitizer_has_no_identity_channel(self):
+        unverified=timeline.sanitize_guest_chain_critical_coverage(None)
+        self.assertTrue(all(x is None for x in unverified.values()))
+        clean=timeline.sanitize_guest_chain_critical_coverage({
+            "guest_chain_critical_hook_coverage": {
+                "confirm_second":True, "positive_thunk":1,
+                "negative_thunk":False, "register_manager":"yes",
+                "raw_utid":"SECRET", "token":"NO_LOG",
+            }})
+        self.assertTrue(clean["confirm_second"])
+        self.assertIsNone(clean["positive_thunk"])
+        self.assertFalse(clean["negative_thunk"])
+        self.assertIsNone(clean["register_manager"])
+        self.assertNotIn("SECRET",str(clean))
+        self.assertNotIn("NO_LOG",str(clean))
+        js=Path(__file__).with_name("home41_arm64_auth_timeline.js").read_text(
+            encoding="utf-8")
+        self.assertIn("guest_chain_critical_hook_coverage",js)
+        for name in timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS:
+            self.assertIn(name + ":",js)
+
     def test_normal_chronology_is_observed_not_proven_server_success(self):
         events = [
             ev("arm64_auth_observer_ready", 1),
