@@ -59,9 +59,15 @@ class RawA64GuestAuditTests(unittest.TestCase):
             "<IIIII",*native.EXPECTED_GUEST_START_THUNK)
         store_pc,store_insn=native.EXPECTED_GUEST_DECISION_STORE
         encoded[store_pc]=struct.pack("<I",store_insn)
-        # BLR X13 (synthetic), not an inferred target identity.
-        encoded[native.EXPECTED_MANAGER_DISPATCH_BLR_PC]=struct.pack(
+        # BLR X13 in an ADJACENT callback (synthetic), not the manager.
+        encoded[native.EXPECTED_NEARBY_CALLBACK_BLR_PC]=struct.pack(
             "<I",0xD63F0000 | (13<<5))
+        for pc,insn in (
+            native.EXPECTED_PRECEDING_BRANCH,
+            native.EXPECTED_ADJACENT_PROLOGUE,
+            native.EXPECTED_ADJACENT_RETURN,
+        ):
+            encoded[pc]=struct.pack("<I",insn)
         def fake_extract(_so,_segs,pc,length):
             blob=encoded[pc]
             self.assertEqual(len(blob),length)
@@ -69,14 +75,17 @@ class RawA64GuestAuditTests(unittest.TestCase):
         with patch.object(native,"extract_at_rva",side_effect=fake_extract):
             report=native.verify_verified_guest_branch_chain(b"",[])
         self.assertEqual(report["verified_edge_count"],8)
-        self.assertEqual(report["manager_indirect_dispatch_site"]["rva"],
-                         "0x1D2FA20")
-        self.assertEqual(report["manager_indirect_dispatch_site"]["branch_register"],
-                         "X13")
-        self.assertFalse(report["manager_indirect_dispatch_site"][
-            "callee_identity_verified"])
-        self.assertFalse(report["manager_indirect_dispatch_site"][
-            "http_request_send_verified"])
+        helper=report["adjacent_conditional_callback_blr"]
+        self.assertEqual(helper["rva"],"0x1D2FA20")
+        self.assertEqual(helper["branch_register"],"X13")
+        self.assertFalse(helper["callee_identity_verified"])
+        self.assertFalse(helper["http_request_send_verified"])
+        self.assertFalse(helper["atuh_register_user_body_membership_verified"])
+        self.assertFalse(helper["original_IL2CPP_method_identity_verified"])
+        self.assertEqual(helper["boundary_evidence"][
+            "adjacent_prologue"]["rva"],"0x1D2F9F8")
+        self.assertEqual(helper["boundary_evidence"][
+            "preceding_tail_branch"]["rva"],"0x1D2F9E8")
         self.assertFalse(report["actual_server_registration_confirmed"])
         self.assertFalse(report["button_to_delegate_runtime_identity_verified"])
         self.assertEqual(report["guest_start_callback"]["if_true"],
@@ -89,12 +98,20 @@ class RawA64GuestAuditTests(unittest.TestCase):
             x["target_rva"]=="0x1D2F8DC"
             for x in report["edges"]))
         broken=dict(encoded)
-        broken[native.EXPECTED_MANAGER_DISPATCH_BLR_PC]=struct.pack(
+        broken[native.EXPECTED_NEARBY_CALLBACK_BLR_PC]=struct.pack(
             "<I",0xD503201F)
         with patch.object(
                 native,"extract_at_rva",
                 side_effect=lambda so,segs,pc,length:broken[pc]):
-            with self.assertRaisesRegex(ValueError,"indirect callsite missing BLR"):
+            with self.assertRaisesRegex(ValueError,"adjacent callback callsite missing BLR"):
+                native.verify_verified_guest_branch_chain(b"",[])
+        broken=dict(encoded)
+        broken[native.EXPECTED_ADJACENT_PROLOGUE[0]]=struct.pack(
+            "<I",0xD503201F)
+        with patch.object(native,"extract_at_rva",
+                          side_effect=lambda so,segs,pc,length:broken[pc]):
+            with self.assertRaisesRegex(
+                    ValueError,"adjacent function boundary opcode mismatch"):
                 native.verify_verified_guest_branch_chain(b"",[])
         broken=dict(encoded)
         broken[0x1DE5690]=struct.pack("<I",0xD503201F)
