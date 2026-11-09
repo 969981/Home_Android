@@ -120,6 +120,11 @@ let firstBootBodyPtr = null;
 let lastRequestedFirstBootPhaseIndex = null;
 let firstBootGoToPhaseHookAttached = false;
 let firstBootAdvertisementSDKHookAttached = false;
+// Fixed-name coverage bits; never contain pointers or captured objects.
+let guestCallbackHookCoverage = {
+  second_direct: false, post_1098: false,
+  post_16f4: false, register_manager: false
+};
 function readCurrentFirstBootPhase() {
   if (firstBootBodyPtr === null) return null;
   try {
@@ -385,7 +390,8 @@ rpc.exports = {
         day_setter_returned: localDaySetterReturned,
         day_setter_failure: localDaySetterFailure
       },
-      counts: {...counts}
+      counts: {...counts},
+      guest_callback_hook_coverage: {...guestCallbackHookCoverage}
     };
   },
   // Explicit single local-form interaction. Never used by the ordinary
@@ -563,8 +569,10 @@ function install(lib) {
   function optionalUiObserver(name, rva, event) {
     try {
       Interceptor.attach(ptr(rva), onEntered(event));
+      return true;
     } catch (_) {
       emit('optional_hook_attach_failed', {observer: name});
+      return false;
     }
   }
   optionalUiObserver('firstboot_clause', RVA.firstBootAddClauseAgree,
@@ -588,18 +596,22 @@ function install(lib) {
                      'firstboot_confirm_gest_second_entered');
   // Pure entry counters for next observation: no args, pointers, return
   // values or network content are emitted, and no callback is invoked.
-  optionalUiObserver('guest_second_direct_callee_unclassified',
-                     RVA.guestSecondDirectCalleeUnclassified,
-                     'guest_second_direct_callee_unclassified_entered');
-  optionalUiObserver('post_guest_candidate_1098',
-                     RVA.postGuestCandidate1098,
-                     'post_guest_candidate_1098_entered');
-  optionalUiObserver('post_guest_candidate_16f4',
-                     RVA.postGuestCandidate16F4,
-                     'post_guest_candidate_16f4_entered');
-  optionalUiObserver('auth_manager_register_user',
-                     RVA.authManagerRegisterUser,
-                     'auth_manager_register_user_entered');
+  guestCallbackHookCoverage.second_direct =
+    optionalUiObserver('guest_second_direct_callee_unclassified',
+                       RVA.guestSecondDirectCalleeUnclassified,
+                       'guest_second_direct_callee_unclassified_entered');
+  guestCallbackHookCoverage.post_1098 =
+    optionalUiObserver('post_guest_candidate_1098',
+                       RVA.postGuestCandidate1098,
+                       'post_guest_candidate_1098_entered');
+  guestCallbackHookCoverage.post_16f4 =
+    optionalUiObserver('post_guest_candidate_16f4',
+                       RVA.postGuestCandidate16F4,
+                       'post_guest_candidate_16f4_entered');
+  guestCallbackHookCoverage.register_manager =
+    optionalUiObserver('auth_manager_register_user',
+                       RVA.authManagerRegisterUser,
+                       'auth_manager_register_user_entered');
   // Read-only original FirstBoot phase observation, no workflow changes.
   // Start and original setup callbacks capture the managed instance only
   // inside this private Frida agent. Never publish the instance pointer.
