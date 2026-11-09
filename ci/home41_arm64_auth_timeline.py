@@ -472,6 +472,7 @@ LIVE_GUEST_CHAIN_EVENTS = frozenset({
     "nearby_conditional_callback_blr_entered",
     "registration_request_serializer_entered",
     "registration_response_handler_entered",
+    "token_request_serializer_entered",
     "token_response_handler_entered",
     "login_response_handler_entered",
     "first_basic_utid_observed",
