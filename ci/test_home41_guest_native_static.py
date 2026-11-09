@@ -5,6 +5,7 @@ import unittest
 
 from home41_guest_native_static import (
     a64_bl_target,a64_b_target,audit_bytes,elf_load_segments,extract_at_rva,
+    WINDOWS, KNOWN,
 )
 
 
@@ -26,6 +27,24 @@ class RawA64GuestAuditTests(unittest.TestCase):
         self.assertEqual(r["ret_sites"],["0x3008"])
         self.assertEqual(r["indirect_blr_sites"],["0x3004"])
         self.assertTrue(r["trailing_bytes_may_be_next_method"])
+
+    def test_new_exact_firstboot_windows_and_non_auth_ui_helpers(self):
+        self.assertEqual(WINDOWS["FirstBoot._AddWarningPart"][0],0x1DE1098)
+        self.assertEqual(WINDOWS["FirstBoot._AddPadder"][0],0x1DE16F4)
+        self.assertEqual(WINDOWS["FirstBoot.DecisionGestAccount"],(0x1DE5508,0x190))
+        self.assertEqual(WINDOWS["FirstBoot.DenialGestAccount"],(0x1DE5698,0xAC))
+        self.assertEqual(WINDOWS["FirstBoot.GuestResultCallback_b84_6"],
+                         (0x1DE64C0,0x14))
+        self.assertEqual(WINDOWS["FirstBoot.SelectTrainerIcon"][0],0x1DE48F8)
+        self.assertEqual(WINDOWS["FirstBoot.ProloguePokemonPanel.OnTapPokemon"][0],
+                         0x1C7F0F4)
+        self.assertEqual(WINDOWS["FirstBoot.PlayPrologue"][0],0x1DE45E8)
+        self.assertEqual(WINDOWS["FirstBoot.PlayPrologue2"][0],0x1DE4CF4)
+        self.assertNotIn("FirstBoot.post_guest_0x1DE1098",WINDOWS)
+        self.assertNotIn("FirstBoot.post_guest_0x1DE16F4",WINDOWS)
+        self.assertEqual(KNOWN[0x1DE64C0],"FirstBoot.GuestResultCallback_b84_6")
+        # Name/position association remains static, not proof of actual call.
+        self.assertNotEqual(KNOWN[0x1DE64C0],"ApiManagerLogin.AtuhRegisterUser")
 
     def test_reject_non_aarch64_and_invalid_segment_table(self):
         b=bytearray(64)
