@@ -153,3 +153,40 @@ py -3 ci/home41_private_postguest_screen.py --label after_guest --i-understand-t
 新添本地安全用例 `ci/test_home41_private_postguest_screen.py`：
 禁止 CI/非交互终端、要求 HOME 前台、拒绝覆盖图片和目录穿越。
 本轮依旧没有可访问的持久化 Android 设备，**所有新增动态步骤尚待实机**。
+
+
+### Phase 与注册管理器的分叉判断
+
+新增 `guest_path.next_step_order_after_second`，它比较**同一份 Frida 事件流**
+中 Second 之后的第一次 `GoToPhase` 请求和第一次注册管理器入口：
+
+| 值 | 已得到的证据 | 下一步 |
+|---|---|---|
+| `phase_requested_before_register_manager_entered` | 请求下一个 Phase 早于进入注册管理器 | 先核对实际头像／序章 UI，避免误判为网络超时 |
+| `phase_request_observed_before_any_register_manager` | 观察到 Phase 请求，但未观察到后继注册管理器 | 检查实际界面及是否仍有必需的官方操作 |
+| `register_manager_entered_before_first_phase_request` | 注册管理器入口更早 | 随后核对请求序列化与响应处理链路 |
+| `register_manager_observed_without_later_phase_request` | 进入注册管理器，但没有后续阶段请求 | 检查网络／回调和当前画面，不能直接认定已经注册 |
+| `no_tracked_next_step_observed` | Second 已命中，两类后续监控都没有观测到 | 检查 Hook 安装与进程、异步回调及新控制器 |
+| `second_confirmation_not_observed` | 本次观察器未捕获 Second | 不能用此前的阶段请求推断确认后的真实路径 |
+
+另有 `guest_path.last_requested_phase_before_registration_manager`，
+仅用于说明在调用注册管理器**之前**最近请求过哪个 FirstBoot Phase，
+不证明该 UI 已显示或就是注册管理器的真实调用者。若需闭合因果，
+仍要原生 Callsite、对象所有权和同一会话响应的证据。
+
+### 持久 Windows Android 模拟器的替代方案
+
+如果没有原生 ARM64 手机，也可以使用**自己电脑中不会被 Actions 自动销毁的**
+Android Studio x86_64 AVD + ARM NativeBridge。在 AVD 中启动 Frida Server，
+使 HOME 进入原版初始界面、并验证版本及 APK 哈希。监控使用
+`--realm emulated`，而非假称原生 ARM64：
+
+~~~powershell
+adb forward tcp:27042 tcp:27042
+py -3 ci/home41_arm64_auth_timeline.py --apk "$apk" --realm emulated --remote-frida --timeout 1800 --output ".\local-home41-emulated-timeline.json"
+~~~
+
+要求 Frida 已附加到运行中的原版 HOME **且在最终游客确认之前**。
+这套仿真结果是 `runtime_emulated_arm64_agent`，不能替代原生 ARM64
+`home41_arm64_runtime_acceptance.py` 的完整三门槛验收。
+后续停止与启动 AVD 时不要选择 `-wipe-data`，也不要卸载或清除 HOME 数据。
