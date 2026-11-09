@@ -20,6 +20,81 @@ spec.loader.exec_module(mod)
 
 
 class ARM64RealmContractTests(unittest.TestCase):
+    def test_reconcile_original_real_emulated_arm64_snapshot(self):
+        # Minimal safe fixture distilled from actual Actions #42578851634.
+        # An old generic NativeBridge "unverified" preflight is NOT final
+        # evidence; the later ARM64 in-realm ready + hook snapshot is.
+        observed={
+            "arm64_frida_runtime_status":"unverified_x86_64_native_bridge",
+            "registration_status":"not_attempted",
+            "stage_monitor":{"arm64_emulated_realm":{
+                "status":"emulated_realm_attached",
+                "agent_script_error":False,
+                "error_type":None,
+                "arm64_rvas_used_in_native_x64_realm":False,
+                "events":[
+                    {"event":"arm64_auth_observer_ready",
+                     "hook_failures":0},
+                    {"event":"firstboot_birthdata_setdata_entered"}],
+                "snapshot":{
+                    "status":"snapshot_received",
+                    "native_arm64":True,
+                    "native_module_ready":True,
+                    "hooks_ready":True,
+                    "first_basic_seen":False,
+                    "raw_utid":"MUST_NOT_COPY",
+                    "token":"SECRET",
+                }
+            }}
+        }
+        outcome=mod.classify_arm64_emulated_runtime(observed)
+        self.assertEqual(outcome["runtime_status"],
+                         "arm64_nativebridge_frida_hooks_verified")
+        self.assertTrue(outcome["frida_arm64_hooks_installed_verified"])
+        self.assertFalse(outcome["registration_verified"])
+        self.assertFalse(outcome["first_basic_verified"])
+        self.assertNotIn("MUST_NOT_COPY",str(outcome))
+        self.assertNotIn("SECRET",str(outcome))
+
+    def test_reconcile_rejects_missing_or_forged_frida_ready(self):
+        baseline={
+            "stage_monitor":{"arm64_emulated_realm":{
+                "status":"emulated_realm_attached",
+                "agent_script_error":False,
+                "error_type":None,
+                "arm64_rvas_used_in_native_x64_realm":False,
+                "events":[{"event":"arm64_auth_observer_ready",
+                           "hook_failures":0}],
+                "snapshot":{"status":"snapshot_received",
+                    "native_arm64":True,
+                    "native_module_ready":True,
+                    "hooks_ready":True}
+            }}
+        }
+        from copy import deepcopy
+        self.assertTrue(mod.classify_arm64_emulated_runtime(
+            baseline)["frida_arm64_hooks_installed_verified"])
+        for p,v in (
+            (("snapshot","hooks_ready"),False),
+            (("snapshot","native_module_ready"),False),
+            (("snapshot","native_arm64"),False),
+            (("snapshot","status"),"missing"),
+            (("events",),[]),
+            (("status",),"preflight_only"),
+            (("agent_script_error",),True),
+            (("arm64_rvas_used_in_native_x64_realm",),True),
+        ):
+            candidate=deepcopy(baseline)
+            realm=candidate["stage_monitor"]["arm64_emulated_realm"]
+            if len(p)==2:
+                realm[p[0]][p[1]]=v
+            else:
+                realm[p[0]]=v
+            self.assertFalse(mod.classify_arm64_emulated_runtime(
+                candidate)["frida_arm64_hooks_installed_verified"],p)
+        self.assertFalse(mod.classify_arm64_emulated_runtime(
+            None)["frida_arm64_hooks_installed_verified"])
+
     def test_snapshot_drops_secrets_and_rejects_boolean_counters(self):
         src = {
             "native_arm64": True, "hooks_ready": True,
