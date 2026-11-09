@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Pure tests for Phase 4 capture gate; no ADB or live HOME."""
 import unittest
-from home41_phase4_masked_capture import phase4_capture_allowed
+from home41_phase4_masked_capture import phase4_capture_allowed, combine_age_and_phase_reports
 
 
 def evidence():
     return {
         "process_at_end":True,
+        "birthday_native_preflight_passed":True,
+        "birthday_next_tapped":True,
+        "post_next_screen_changed":True,
         "registration_status":"not_attempted",
         "account_registration":"not_attempted",
         "post_terms_phase_probe":{
@@ -31,6 +34,26 @@ def evidence():
 
 
 class Phase4CaptureGateTests(unittest.TestCase):
+    def test_two_actual_separate_reports_are_joined(self):
+        original=evidence()
+        age={k:v for k,v in original.items() if k!="post_terms_phase_probe"}
+        post=original["post_terms_phase_probe"]
+        merged=combine_age_and_phase_reports(age,post)
+        self.assertTrue(phase4_capture_allowed(merged))
+        self.assertEqual(merged["post_terms_phase_probe"]["status"],
+                         "phase_4_advertisement_sdk_confirmed")
+        self.assertFalse(phase4_capture_allowed(age))
+        self.assertFalse(phase4_capture_allowed(
+            combine_age_and_phase_reports(age,{})))
+
+    def test_missing_age_evidence_refuses_capture(self):
+        for key in ("birthday_native_preflight_passed",
+                    "birthday_next_tapped","post_next_screen_changed"):
+            with self.subTest(key=key):
+                age=evidence()
+                age[key]=False
+                self.assertFalse(phase4_capture_allowed(age))
+
     def test_only_fully_confirmed_phase4_allows_masked_capture(self):
         self.assertTrue(phase4_capture_allowed(evidence()))
 
