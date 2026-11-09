@@ -879,7 +879,58 @@ def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
                             "nintendo_link_button_tapped": False,
                             "registration_button_tapped": False,
                             "utid_saved": False,
+                            "registration_serializer_entries": counts.get(
+                                "registration_request_serializer_entered", -1),
+                            "first_basic_seen": snap.get("first_basic_seen"),
                         }
+                        if getattr(args, "capture_guest_confirmation_screen", False):
+                            # The current controller may no longer be readable
+                            # during the 7 -> 23 request; screen still needs
+                            # independent visual verification, so never click.
+                            phase_path.write_text(
+                                json.dumps(result, ensure_ascii=False,
+                                           indent=2, sort_keys=True) + "\n",
+                                encoding="utf-8")
+                            guest_dir = out / "home41_guest_confirmation"
+                            cmd = [
+                                sys.executable,
+                                str(Path(__file__).with_name(
+                                    "home41_guest_confirmation_visual.py")),
+                                "--age-report", str(report_path),
+                                "--phase-report", str(phase_path),
+                                "--image-out", str(
+                                    guest_dir / "guest_confirmation_masked.png"),
+                                "--status-out", str(
+                                    guest_dir / "guest_capture_status.json"),
+                            ]
+                            try:
+                                completed = subprocess.run(
+                                    cmd, capture_output=True, text=True,
+                                    timeout=50, check=False)
+                                result["guest_visual_helper_exit_code"] = (
+                                    completed.returncode)
+                                report_status = (
+                                    guest_dir / "guest_capture_status.json")
+                                if report_status.is_file():
+                                    g = json.loads(report_status.read_text(
+                                        encoding="utf-8"))
+                                    result["guest_confirmation_visual"] = {
+                                        "status": g.get("status"),
+                                        "gest_request_proven":
+                                            g.get(
+                                                "original_gest_confirmation_request_proven"
+                                            ) is True,
+                                        "masked_image_saved":
+                                            g.get("masked_screenshot_saved") is True,
+                                        "next_screen_clicked": False,
+                                        "registration_attempted": False,
+                                        "utid_observed": False,
+                                    }
+                            except subprocess.TimeoutExpired:
+                                result["guest_confirmation_visual"] = {
+                                    "status": "guest_visual_capture_timeout",
+                                    "masked_image_saved": False,
+                                }
             return result
         if getattr(args, "probe_phase4_decline_once", False):
             # The only permitted UI action on the new Phase 4 screen is the
@@ -1112,6 +1163,8 @@ def main() -> int:
                         help="One disposable-AVD Terms confirmation followed by read-only native phase snapshot; never register")
     parser.add_argument("--authorize-terms-next-phase-once", action="store_true",
                         help="Explicit one-run authorization for original Terms UI on this disposable AVD")
+    parser.add_argument("--capture-guest-confirmation-screen", action="store_true",
+                        help="Read-only masked UI after live GEST_CONFIRMATION request; no registration")
     parser.add_argument("--probe-nintendo-no-link-once", action="store_true",
                         help="Explicit one-shot original HOME 不关联, stops at next unknown UI")
     parser.add_argument("--authorize-irreversible-nintendo-no-link-once",
@@ -1206,6 +1259,11 @@ def main() -> int:
         )):
             print('{"status":"no_link_requires_explicit_approved_irreversible_one_shot"}')
             return 2
+    if args.capture_guest_confirmation_screen and not (
+            args.probe_nintendo_no_link_once
+            and args.authorize_irreversible_nintendo_no_link_once):
+        print('{"status":"guest_ui_capture_requires_one_shot_no_link_proof"}')
+        return 2
     observer = ARM64RealmStageMonitor(
         args.server, args.network_script, args.arm64_script,
         select_year_1999=args.select_local_year_1999,
@@ -1339,6 +1397,18 @@ def main() -> int:
                     and choice.get("post_click_screen_changed") is True
                     and choice.get("nintendo_link_button_tapped") is False
                     and choice.get("further_confirmation_tapped") is False)
+            if args.capture_guest_confirmation_screen:
+                visual = (phase_probe_result or {}).get(
+                    "guest_confirmation_visual", {})
+                req = (phase_probe_result or {}).get(
+                    "post_no_link_native", {})
+                transition_ok = (
+                    transition_ok
+                    and visual.get("gest_request_proven") is True
+                    and visual.get("masked_image_saved") is True
+                    and req.get("last_requested_phase_index") == 23
+                    and req.get("last_requested_phase_name")
+                        == "GEST_CONFIRMATION")
             return 0 if transition_ok else 3
         if args.confirm_phase4_optout_modal_once:
             modal = (phase_probe_result or {}).get("phase4_modal_probe", {})
