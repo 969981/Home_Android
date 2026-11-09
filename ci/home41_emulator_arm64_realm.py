@@ -62,6 +62,10 @@ _ALLOWED_AGENT_EVENTS = frozenset({
     "firstboot_confirmation_gest_account_entered",
     "firstboot_confirm_gest_first_entered",
     "firstboot_confirm_gest_second_entered",
+    "guest_second_direct_callee_unclassified_entered",
+    "post_guest_candidate_1098_entered",
+    "post_guest_candidate_16f4_entered",
+    "auth_manager_register_user_entered",
     "year_native_item_select_armed",
     "year_native_item_select_returned",
     "year_native_item_select_failed",
@@ -256,6 +260,13 @@ def sanitized_arm64_snapshot(raw: object) -> dict:
         "serialized_lng_cntry_seen":
             raw.get("serialized_lng_cntry_seen") is True,
         "counts": cleaned_counts,
+        "guest_callback_hook_coverage": {
+            k: (raw.get("guest_callback_hook_coverage") or {}).get(k) is True
+            if isinstance(raw.get("guest_callback_hook_coverage"), dict)
+            else False
+            for k in ("second_direct", "post_1098",
+                      "post_16f4", "register_manager")
+        },
         "birthdate_ui": sanitize_birth_ui(raw.get("birthdate_ui")),
         "firstboot_ui": sanitize_firstboot_ui(raw.get("firstboot_ui")),
         "utid_raw_or_candidate_logged": False,
@@ -1093,6 +1104,12 @@ def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
                                             json.dumps(result,ensure_ascii=False,
                                                        indent=2,sort_keys=True)+"\n",
                                             encoding="utf-8")
+                                        # Snapshot only fixed categorical counters BEFORE
+                                        # the last UI click to exclude earlier UI calls.
+                                        pre_guest_final = sanitized_arm64_snapshot(
+                                            observer.arm64_agent.exports_sync.snapshot())
+                                        pre_guest_final_counts = pre_guest_final.get(
+                                            "counts", {})
                                         cmd = [
                                             sys.executable,
                                             str(Path(__file__).with_name(
@@ -1137,7 +1154,27 @@ def run_terms_next_phase_probe(args: argparse.Namespace, report: dict,
                                                 observer.arm64_agent.exports_sync.snapshot())
                                             counts=live.get("counts",{})
                                             ui=live.get("firstboot_ui",{})
+                                            hook_coverage=live.get(
+                                                "guest_callback_hook_coverage",{})
+                                            event_hooks={
+                                                "second_direct": (
+                                                    "guest_second_direct_callee_unclassified_entered"),
+                                                "post_1098": "post_guest_candidate_1098_entered",
+                                                "post_16f4": "post_guest_candidate_16f4_entered",
+                                                "register_manager": "auth_manager_register_user_entered",
+                                            }
+                                            # Null means the observer was NOT attached;
+                                            # zero means attached but no new entry.
+                                            call_deltas={
+                                                k: max(0, counts.get(v,0) -
+                                                       pre_guest_final_counts.get(v,0))
+                                                if hook_coverage.get(k) is True else None
+                                                for k,v in event_hooks.items()
+                                            }
                                             result["post_guest_final_native"] = {
+                                                "guest_callback_hook_coverage": hook_coverage,
+                                                "guest_callback_entries_since_final_click":
+                                                    call_deltas,
                                                 "status": "native_guest_final_snapshot_received",
                                                 "native_arm64":
                                                     live.get("native_arm64") is True,
