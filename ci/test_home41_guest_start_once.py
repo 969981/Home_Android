@@ -32,7 +32,7 @@ def guest_confirmation():
         (.50,.745,(248,250,245)),
         (.25,.975,(247,251,247)),
         (.75,.975,(255,173,4)),
-        (.75,.985,(255,173,4)),
+        (.75,.985,(255,243,218)),
     ):
         img.putpixel((int(w*x),int(h*y)),rgb)
     # White guest "是" and dark guest "否" one-character clusters.
