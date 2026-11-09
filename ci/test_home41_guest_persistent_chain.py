@@ -495,5 +495,66 @@ class GuestChronologyFixtures(unittest.TestCase):
         self.assertNotIn("SECRET", str(clean))
 
 
+    def test_register_request_ctor_address_match_is_independent_of_token(self):
+        source=Path(__file__).with_name(
+            "home41_arm64_auth_timeline.js").read_text(encoding="utf-8")
+        self.assertIn("registerConstructor: 0x1D336C8", source)
+        self.assertIn("observedRegisterCtorInstances.clear()", source)
+        self.assertIn("recordCtorInstance(args, observedRegisterCtorInstances)",
+                      source)
+        self.assertIn("same_register_ctor_instance_observed: true", source)
+        events=[
+            ev("firstboot_confirm_gest_second_entered", 10),
+            ev("registration_request_constructor_entered", 20),
+            {**ev("registration_request_serializer_entered", 30),
+             "same_register_ctor_instance_observed": True},
+            ev("auth_manager_tail_callee_35cc8_entered", 40),
+            ev("token_request_serializer_entered", 50)
+        ]
+        crit={k: True for k in timeline.GUEST_CHAIN_CRITICAL_HOOK_KEYS}
+        tail={k: True for k in timeline.REGISTER_TAIL_HOOK_KEYS}
+        report=timeline.observe_guest_register_order(events,crit,tail)
+        self.assertTrue(report["same_auth_register_request_instance_observed"])
+        self.assertFalse(report["same_create_token_request_instance_observed"])
+        self.assertFalse(report["identical_registration_request_proven"])
+        self.assertFalse(report["server_registration_proven"])
+        early=timeline.observe_guest_register_order(events[1:],crit,tail)
+        self.assertFalse(early["same_auth_register_request_instance_observed"])
+
+    def test_register_ctor_coverage_and_identity_redaction(self):
+        self.assertIsNone(
+            timeline.sanitize_register_request_ctor_coverage(None))
+        self.assertIsNone(timeline.sanitize_register_request_ctor_coverage({
+            "register_request_ctor_hook_attached": 1
+        }))
+        self.assertIs(timeline.sanitize_register_request_ctor_coverage({
+            "register_request_ctor_hook_attached": True,
+            "account_token": "SECRET"
+        }),True)
+        message={"type":"send","payload":{
+            "kind":timeline.KIND, "version":timeline.EXPECTED_VERSION,
+            "event":"registration_request_serializer_entered",
+            "elapsed_ms":42, "same_register_ctor_instance_observed":True,
+            "raw_ptr":"0xDEADBEEF", "uuid":"SECRET"
+        }}
+        clean=timeline.sanitize_timeline_event(message)
+        self.assertEqual(clean, {
+            "event":"registration_request_serializer_entered",
+            "elapsed_ms":42, "same_register_ctor_instance_observed":True
+        })
+        message["payload"]["same_register_ctor_instance_observed"]=1
+        self.assertNotIn("same_register_ctor_instance_observed",
+                         timeline.sanitize_timeline_event(message))
+        message["payload"]["event"]="token_request_serializer_entered"
+        message["payload"]["same_register_ctor_instance_observed"]=True
+        self.assertNotIn("same_register_ctor_instance_observed",
+                         timeline.sanitize_timeline_event(message))
+        message["payload"]["event"]="registration_request_constructor_entered"
+        self.assertEqual(
+            timeline.sanitize_timeline_event(message),
+            {"event":"registration_request_constructor_entered",
+             "elapsed_ms":42})
+
+
 if __name__ == "__main__":
     unittest.main()
